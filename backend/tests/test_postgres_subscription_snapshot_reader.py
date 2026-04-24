@@ -123,3 +123,32 @@ def test_postgres_put_if_absent_inserts_and_skips_existing_state(pg_url: str) ->
             await pool.close()
 
     asyncio.run(main())
+
+
+def test_postgres_upsert_state_updates_or_inserts(pg_url: str) -> None:
+    async def main() -> None:
+        pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(_apply_schema_sql())
+            internal_user_id = f"{_INTERNAL_PREFIX}upsert_1"
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM subscription_snapshots WHERE internal_user_id = $1::text",
+                    internal_user_id,
+                )
+            adapter = PostgresSubscriptionSnapshotReader(pool)
+            await adapter.upsert_state(SubscriptionSnapshot(internal_user_id=internal_user_id, state_label="inactive"))
+            assert await adapter.get_for_user(internal_user_id) == SubscriptionSnapshot(
+                internal_user_id=internal_user_id,
+                state_label="inactive",
+            )
+            await adapter.upsert_state(SubscriptionSnapshot(internal_user_id=internal_user_id, state_label="active"))
+            assert await adapter.get_for_user(internal_user_id) == SubscriptionSnapshot(
+                internal_user_id=internal_user_id,
+                state_label="active",
+            )
+        finally:
+            await pool.close()
+
+    asyncio.run(main())

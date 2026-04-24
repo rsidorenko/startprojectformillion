@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 
 _MAX_INTENT_STRING_LEN = 64
+_MAX_INTERNAL_FACT_REF_LEN = 256
+_UC05_REF_SAFE = re.compile(r"^[\w.\-:]{1,256}$")
 
 
 class NormalizedIntent(str, Enum):
@@ -57,3 +60,17 @@ def validate_telegram_update_id(value: int) -> int:
     if value > 2**63 - 1:
         raise ValidationError("update_id out of bounds")
     return value
+
+
+def validate_internal_fact_ref_uc05(value: str) -> str:
+    """Bounded :class:`internal_fact_ref` for UC-05 (aligned with billing ingest ref rules)."""
+    if not isinstance(value, str):
+        raise ValidationError("internal_fact_ref must be a string")
+    s = value.strip()
+    if not s:
+        raise ValidationError("internal_fact_ref is required")
+    if len(s) > _MAX_INTERNAL_FACT_REF_LEN:
+        raise ValidationError("internal_fact_ref exceeds maximum length")
+    if _UC05_REF_SAFE.fullmatch(s) is None:
+        raise ValidationError("internal_fact_ref has invalid format")
+    return s

@@ -160,3 +160,12 @@ async def test_append_is_append_only_via_test_helper() -> None:
     records = await repo.records_for_tests()
     assert [r.internal_fact_ref for r in records] == ["be-1", "be-2"]
 
+
+@pytest.mark.asyncio
+async def test_get_by_internal_fact_ref() -> None:
+    repo = InMemoryBillingEventsLedgerRepository()
+    r = _make_record(internal_fact_ref="ref-a", external_event_id="e-a")
+    await repo.append_or_get_by_provider_and_external_id(r)
+    assert await repo.get_by_internal_fact_ref("ref-a") is r
+    assert await repo.get_by_internal_fact_ref("missing") is None
+

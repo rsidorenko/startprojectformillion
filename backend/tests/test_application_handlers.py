@@ -22,7 +22,7 @@ from app.security.errors import (
     UserSafeErrorCode,
 )
 from app.shared.correlation import new_correlation_id
-from app.shared.types import OperationOutcomeCategory, SafeUserStatusCategory
+from app.shared.types import OperationOutcomeCategory, SafeUserStatusCategory, SubscriptionSnapshotState
 
 
 class _FakeIdentityRepo:
@@ -76,6 +76,9 @@ class _FakeAudit:
 
 class _FakeSnapshotWriter:
     async def put_if_absent(self, snapshot: SubscriptionSnapshot) -> None:
+        return None
+
+    async def upsert_state(self, snapshot: SubscriptionSnapshot) -> None:
         return None
 
 
@@ -190,6 +193,22 @@ def test_get_status_known_user_needs_review_snapshot() -> None:
         assert r.outcome is OperationOutcomeCategory.SUCCESS
         assert r.safe_status is SafeUserStatusCategory.NEEDS_REVIEW
         assert r.user_safe is None
+
+    _run(main())
+
+
+def test_get_status_active_subscription_uses_billing_backed_state() -> None:
+    async def main() -> None:
+        ident = _FakeIdentityRepo()
+        await ident.create_if_absent(52)
+        snap = SubscriptionSnapshot(
+            internal_user_id="u52", state_label=SubscriptionSnapshotState.ACTIVE.value
+        )
+        h = GetSubscriptionStatusHandler(ident, _FakeSnapshots({"u52": snap}))
+        cid = new_correlation_id()
+        r = await h.handle(GetSubscriptionStatusInput(telegram_user_id=52, correlation_id=cid))
+        assert r.outcome is OperationOutcomeCategory.SUCCESS
+        assert r.safe_status is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE
 
     _run(main())
 

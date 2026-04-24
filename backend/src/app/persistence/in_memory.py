@@ -94,6 +94,13 @@ class InMemorySubscriptionSnapshotReader:
                 state_label=snapshot.state_label,
             )
 
+    async def upsert_state(self, snapshot: SubscriptionSnapshot) -> None:
+        async with self._lock:
+            self._by_internal_user[snapshot.internal_user_id] = SubscriptionSnapshot(
+                internal_user_id=snapshot.internal_user_id,
+                state_label=snapshot.state_label,
+            )
+
     async def upsert_for_tests(self, internal_user_id: str, snapshot: SubscriptionSnapshot | None) -> None:
         """Test/fixture hook only; application handlers do not call this."""
         async with self._lock:

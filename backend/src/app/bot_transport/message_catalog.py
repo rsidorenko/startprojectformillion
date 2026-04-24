@@ -39,6 +39,10 @@ _CATALOG_TEXT: dict[str, str] = {
         "Access is temporarily restricted while a review is in place. You can use /status or /help. "
         "This build does not send files."
     ),
+    OutboundMessageKey.SUBSCRIPTION_ACTIVE.value: (
+        "Your subscription is active from the information this bot can read. "
+        "This build does not send connection files; use /help for commands."
+    ),
     OutboundMessageKey.SLICE1_HELP.value: (
         "Command list in this build:\n"
         "/start - register and link this chat to your account\n"

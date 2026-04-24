@@ -150,6 +150,21 @@ def test_needs_review_status_message_key() -> None:
     assert plan.category is OutboundPlanCategory.SUCCESS
 
 
+def test_subscription_active_status_message_key() -> None:
+    cid = new_correlation_id()
+    safe = map_get_subscription_status_to_transport(
+        GetSubscriptionStatusResult(
+            outcome=OperationOutcomeCategory.SUCCESS,
+            correlation_id=cid,
+            safe_status=SafeUserStatusCategory.SUBSCRIPTION_ACTIVE,
+            user_safe=None,
+        ),
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    assert plan.message_key == OutboundMessageKey.SUBSCRIPTION_ACTIVE.value
+    assert plan.category is OutboundPlanCategory.SUCCESS
+
+
 def test_error_invalid_input_safe_key() -> None:
     cid = new_correlation_id()
     safe = TransportSafeResponse(

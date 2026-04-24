@@ -147,6 +147,17 @@ def test_needs_review_safe_no_internals() -> None:
     _assert_no_dsn_or_secretish(out.message_text)
 
 
+def test_subscription_active_renders_without_billing_internals() -> None:
+    plan = _plan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=OutboundMessageKey.SUBSCRIPTION_ACTIVE.value,
+    )
+    out = render_telegram_outbound_plan(plan)
+    assert "active" in out.message_text.lower()
+    assert "provider" not in out.message_text.lower()
+    _assert_no_dsn_or_secretish(out.message_text)
+
+
 def test_invalid_input_safe() -> None:
     plan = _plan(
         category=OutboundPlanCategory.ERROR,

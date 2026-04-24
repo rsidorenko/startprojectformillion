@@ -109,3 +109,9 @@ class BillingEventsLedgerRepository(Protocol):
     ) -> BillingEventsLedgerUserSummary:
         """Return a bounded diagnostics summary of accepted billing facts for a user."""
 
+    async def get_by_internal_fact_ref(
+        self,
+        internal_fact_ref: str,
+    ) -> BillingEventLedgerRecord | None:
+        """Return the ledger row for the primary key, or None if not found."""
+

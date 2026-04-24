@@ -48,3 +48,31 @@ class PostgresSubscriptionSnapshotReader:
                 )
         except (asyncpg.PostgresError, OSError) as exc:
             raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
+
+    _UPSERT_STATE = """
+        INSERT INTO subscription_snapshots (internal_user_id, state_label)
+        VALUES ($1::text, $2::text)
+        ON CONFLICT (internal_user_id) DO UPDATE
+        SET state_label = EXCLUDED.state_label
+    """
+
+    @staticmethod
+    async def upsert_state_in_connection(
+        conn: asyncpg.Connection,
+        snapshot: SubscriptionSnapshot,
+    ) -> None:
+        try:
+            await conn.execute(
+                PostgresSubscriptionSnapshotReader._UPSERT_STATE,
+                snapshot.internal_user_id,
+                snapshot.state_label,
+            )
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
+
+    async def upsert_state(self, snapshot: SubscriptionSnapshot) -> None:
+        try:
+            async with self._pool.acquire() as conn:
+                await PostgresSubscriptionSnapshotReader.upsert_state_in_connection(conn, snapshot)
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc

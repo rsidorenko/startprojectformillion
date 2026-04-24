@@ -340,3 +340,22 @@ def test_adm02_adapter_with_postgres_ledger_and_two_users(pg_url: str) -> None:
             await pool.close()
 
     asyncio.run(main())
+
+
+def test_postgres_get_by_internal_fact_ref(pg_url: str) -> None:
+    async def main() -> None:
+        pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
+        try:
+            await _cleanup_and_migrate(pool)
+            ref = f"{_PREFIX}gref1"
+            rec = _make_record(internal_fact_ref=ref, external_event_id="gext-1")
+            repo = PostgresBillingEventsLedgerRepository(pool)
+            await repo.append_or_get_by_provider_and_external_id(rec)
+            got = await repo.get_by_internal_fact_ref(ref)
+            assert got is not None
+            assert got.internal_fact_ref == ref
+            assert await repo.get_by_internal_fact_ref("no-such-ref") is None
+        finally:
+            await pool.close()
+
+    asyncio.run(main())

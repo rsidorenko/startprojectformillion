@@ -33,3 +33,10 @@ def test_no_paid_without_billing_backed_state() -> None:
     ):
         out = map_subscription_status_view(True, state)
         assert out is SafeUserStatusCategory.INACTIVE_OR_NOT_ELIGIBLE
+
+
+def test_subscription_active_when_billing_backed() -> None:
+    assert (
+        map_subscription_status_view(True, SubscriptionSnapshotState.ACTIVE)
+        is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE
+    )

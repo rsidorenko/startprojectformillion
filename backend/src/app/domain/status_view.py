@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from app.shared.types import SafeUserStatusCategory, SubscriptionSnapshotState
 
-# Slice 1: no billing-backed activation; never show paid/active without explicit allowlist.
-_BILLING_BACKED_ACTIVE: frozenset[SubscriptionSnapshotState] = frozenset()
+# UC-05 v1: only explicit enum values may surface as subscription active in safe status.
+_BILLING_BACKED_ACTIVE: frozenset[SubscriptionSnapshotState] = frozenset(
+    {SubscriptionSnapshotState.ACTIVE}
+)
 
 
 def map_subscription_status_view(
@@ -28,8 +30,7 @@ def map_subscription_status_view(
         return SafeUserStatusCategory.INACTIVE_OR_NOT_ELIGIBLE
 
     if snapshot in _BILLING_BACKED_ACTIVE:
-        # Reserved for future billing-backed states; currently unreachable.
-        return SafeUserStatusCategory.INACTIVE_OR_NOT_ELIGIBLE
+        return SafeUserStatusCategory.SUBSCRIPTION_ACTIVE
 
     if snapshot is SubscriptionSnapshotState.NEEDS_REVIEW:
         return SafeUserStatusCategory.NEEDS_REVIEW

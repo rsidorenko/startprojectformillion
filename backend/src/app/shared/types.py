@@ -18,11 +18,12 @@ class OperationOutcomeCategory(str, Enum):
 
 
 class SafeUserStatusCategory(str, Enum):
-    """Fail-closed user-facing status buckets for UC-02 (no billing claims in slice 1)."""
+    """Fail-closed user-facing status buckets for UC-02 (UC-05 may add explicit subscription active)."""
 
     NEEDS_BOOTSTRAP = "needs_bootstrap"
     INACTIVE_OR_NOT_ELIGIBLE = "inactive_or_not_eligible"
     NEEDS_REVIEW = "needs_review"
+    SUBSCRIPTION_ACTIVE = "subscription_active"
 
 
 class SubscriptionSnapshotState(str, Enum):
@@ -32,6 +33,7 @@ class SubscriptionSnapshotState(str, Enum):
     INACTIVE = "inactive"
     NOT_ELIGIBLE = "not_eligible"
     NEEDS_REVIEW = "needs_review"
+    ACTIVE = "active"
 
 
 @dataclass(frozen=True, slots=True)

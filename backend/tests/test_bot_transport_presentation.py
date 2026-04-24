@@ -120,6 +120,20 @@ def test_status_inactive_snapshot_fail_closed() -> None:
     assert r.replay_suppresses_outbound is False
 
 
+def test_status_subscription_active_maps_stably() -> None:
+    cid = new_correlation_id()
+    r = map_get_subscription_status_to_transport(
+        GetSubscriptionStatusResult(
+            outcome=OperationOutcomeCategory.SUCCESS,
+            correlation_id=cid,
+            safe_status=SafeUserStatusCategory.SUBSCRIPTION_ACTIVE,
+            user_safe=None,
+        ),
+    )
+    assert r.category is TransportResponseCategory.SUCCESS
+    assert r.code == TransportStatusCode.SUBSCRIPTION_ACTIVE.value
+
+
 def test_transport_response_has_no_outcome_or_internal_fields() -> None:
     cid = new_correlation_id()
     r = map_bootstrap_identity_to_transport(

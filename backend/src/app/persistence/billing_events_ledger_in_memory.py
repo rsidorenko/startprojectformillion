@@ -24,6 +24,7 @@ class InMemoryBillingEventsLedgerRepository(BillingEventsLedgerRepository):
         self._lock = asyncio.Lock()
         self._records: list[BillingEventLedgerRecord] = []
         self._by_provider_and_external_id: dict[tuple[str, str], BillingEventLedgerRecord] = {}
+        self._by_internal_fact_ref: dict[str, BillingEventLedgerRecord] = {}
 
     async def append_or_get_by_provider_and_external_id(
         self,
@@ -37,7 +38,15 @@ class InMemoryBillingEventsLedgerRepository(BillingEventsLedgerRepository):
 
             self._records.append(record)
             self._by_provider_and_external_id[key] = record
+            self._by_internal_fact_ref[record.internal_fact_ref] = record
             return record
+
+    async def get_by_internal_fact_ref(
+        self,
+        internal_fact_ref: str,
+    ) -> BillingEventLedgerRecord | None:
+        async with self._lock:
+            return self._by_internal_fact_ref.get(internal_fact_ref)
 
     async def get_user_billing_facts_summary(
         self,

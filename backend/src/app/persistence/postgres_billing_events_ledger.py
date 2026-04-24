@@ -106,6 +106,24 @@ class PostgresBillingEventsLedgerRepository(BillingEventsLedgerRepository):
         WHERE billing_provider_key = $1::text AND external_event_id = $2::text
     """
 
+    _SELECT_BY_INTERNAL_FACT_REF = """
+        SELECT
+            internal_fact_ref,
+            billing_provider_key,
+            external_event_id,
+            event_type,
+            event_effective_at,
+            event_received_at,
+            internal_user_id,
+            checkout_attempt_id,
+            amount_minor_units,
+            currency_code,
+            status,
+            ingestion_correlation_id
+        FROM billing_events_ledger
+        WHERE internal_fact_ref = $1::text
+    """
+
     _SELECT_SUMMARY_REFS = """
         SELECT internal_fact_ref
         FROM billing_events_ledger
@@ -188,6 +206,36 @@ class PostgresBillingEventsLedgerRepository(BillingEventsLedgerRepository):
         if cur is None:
             raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_INVARIANT)
         return _row_to_record(cur)
+
+    @staticmethod
+    async def get_by_internal_fact_ref_in_connection(
+        conn: asyncpg.Connection,
+        internal_fact_ref: str,
+    ) -> BillingEventLedgerRecord | None:
+        """Read one ledger row in an existing connection (e.g. UC-05 single transaction)."""
+        try:
+            row = await conn.fetchrow(
+                PostgresBillingEventsLedgerRepository._SELECT_BY_INTERNAL_FACT_REF,
+                internal_fact_ref,
+            )
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
+        if row is None:
+            return None
+        return _row_to_record(row)
+
+    async def get_by_internal_fact_ref(
+        self,
+        internal_fact_ref: str,
+    ) -> BillingEventLedgerRecord | None:
+        try:
+            async with self._pool.acquire() as conn:
+                return await PostgresBillingEventsLedgerRepository.get_by_internal_fact_ref_in_connection(
+                    conn,
+                    internal_fact_ref,
+                )
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
 
     async def get_user_billing_facts_summary(
         self,

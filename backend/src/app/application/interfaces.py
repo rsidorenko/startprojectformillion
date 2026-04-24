@@ -69,9 +69,13 @@ class SubscriptionSnapshotReader(Protocol):
 
 
 class SubscriptionSnapshotWriter(Protocol):
-    """Narrow insert-if-missing contract for UC-01 default row (no upsert updates)."""
+    """Insert-if-missing for UC-01; UC-05 may update state via :meth:`upsert_state`."""
 
     async def put_if_absent(self, snapshot: SubscriptionSnapshot) -> None:
+        ...
+
+    async def upsert_state(self, snapshot: SubscriptionSnapshot) -> None:
+        """Set subscription snapshot for user (insert or update ``state_label``)."""
         ...
 
 
