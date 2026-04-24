@@ -63,6 +63,7 @@ Expected CI commands (from `backend`):
 
 ```bash
 python -m pip install -e .[test]
+python -m pytest -q --junitxml=test-reports/backend-full-regression.xml
 docker --version
 docker compose version
 python -m pytest -q tests/test_run_postgres_mvp_smoke_local.py tests/test_run_postgres_mvp_smoke.py tests/test_run_slice1_retention_dry_run.py --junitxml=test-reports/backend-smoke-helper-regression.xml
@@ -73,10 +74,12 @@ Notes:
 - CI path uses disposable local Docker PostgreSQL through `scripts/run_postgres_mvp_smoke_local.py`.
 - Local runner sets local-only `DATABASE_URL` and mutating-test opt-in guard automatically for child smoke.
 - Do not replace this with manual external `DATABASE_URL` smoke in CI.
+- CI sequencing is explicit: full backend regression JUnit first, then targeted smoke helper regression, then real local isolated PostgreSQL smoke.
 - Cursor-driven manual dispatch still requires installed/authenticated `gh`, but normal push-triggered CI does not require local `gh`.
 - CI writes reports from `backend` working directory using backend-relative `REPORT_DIR=test-reports`, then uploads artifact `backend-postgres-mvp-smoke-validation-reports` from repo-root path `backend/test-reports`.
 - CI uses a non-hidden reports directory so artifact collection remains `actions/upload-artifact` friendly.
 - Artifact includes:
+  - `backend-full-regression.xml` (JUnit for full backend regression suite);
   - `backend-smoke-helper-regression.xml` (JUnit for helper regression);
   - `backend-postgres-mvp-smoke-local.log` (raw smoke command output);
   - `backend-postgres-mvp-smoke-local-summary.txt` (safe tail summary for quick triage).

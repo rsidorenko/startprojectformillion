@@ -51,6 +51,9 @@ jobs:
       - name: Prepare validation reports directory
         run: mkdir -p "$REPORT_DIR"
 
+      - name: Run full backend regression tests
+        run: python -m pytest -q --junitxml="$REPORT_DIR/backend-full-regression.xml"
+
       - name: Check Docker and Compose
         run: docker --version && docker compose version
 
