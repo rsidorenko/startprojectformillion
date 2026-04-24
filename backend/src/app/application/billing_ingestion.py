@@ -1,6 +1,7 @@
 """Internal normalized billing fact ingestion (no HTTP, no provider parsing).
 
-Appends to BillingEventsLedgerRepository only. UC-05 and audit trail are out of scope for this slice.
+Appends to :class:`BillingEventsLedgerRepository`, then append-only UC-04 billing ingestion audit
+(no raw provider payload). UC-05 apply-to-subscription is out of scope.
 """
 
 from __future__ import annotations
@@ -15,6 +16,13 @@ from app.persistence.billing_events_ledger_contracts import (
     BillingEventLedgerRecord,
     BillingEventLedgerStatus,
     BillingEventsLedgerRepository,
+)
+from app.persistence.billing_ingestion_audit_contracts import (
+    BILLING_INGESTION_AUDIT_OPERATION,
+    BILLING_INGESTION_OUTCOME_ACCEPTED,
+    BILLING_INGESTION_OUTCOME_IDEMPOTENT_REPLAY,
+    BillingIngestionAuditRecord,
+    BillingIngestionAuditAppender,
 )
 from app.security.validation import ValidationError
 
@@ -111,8 +119,9 @@ class IngestNormalizedBillingFactResult:
 class IngestNormalizedBillingFactHandler:
     """Validates :class:`NormalizedBillingFactInput` and appends to the billing events ledger."""
 
-    def __init__(self, ledger: BillingEventsLedgerRepository) -> None:
+    def __init__(self, ledger: BillingEventsLedgerRepository, audit: BillingIngestionAuditAppender) -> None:
         self._ledger = ledger
+        self._audit = audit
 
     def _resolve_internal_fact_ref(self, provided: str | None) -> str:
         if provided is None:
@@ -171,6 +180,25 @@ class IngestNormalizedBillingFactHandler:
         # Idempotent hit: same (provider, external_id) already stored with a different internal ref
         # (typical when internal_fact_ref is auto-generated per request).
         is_replay = stored.internal_fact_ref != constructed.internal_fact_ref
+        audit_outcome = (
+            BILLING_INGESTION_OUTCOME_IDEMPOTENT_REPLAY
+            if is_replay
+            else BILLING_INGESTION_OUTCOME_ACCEPTED
+        )
+        # Fail-closed: :class:`PersistenceDependencyError` from the audit appender (e.g. Postgres)
+        # propagates to the caller; ledger already contains the fact for this attempt.
+        await self._audit.append(
+            BillingIngestionAuditRecord(
+                internal_fact_ref=stored.internal_fact_ref,
+                billing_provider_key=stored.billing_provider_key,
+                external_event_id=stored.external_event_id,
+                ingestion_correlation_id=stored.ingestion_correlation_id,
+                operation=BILLING_INGESTION_AUDIT_OPERATION,
+                outcome=audit_outcome,
+                billing_event_status=stored.status.value,
+                is_idempotent_replay=is_replay,
+            )
+        )
         return IngestNormalizedBillingFactResult(
             record=stored,
             is_idempotent_replay=is_replay,

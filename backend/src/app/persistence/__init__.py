@@ -38,8 +38,17 @@ from app.persistence.postgres_audit import PostgresAuditAppender
 from app.persistence.postgres_idempotency import PostgresIdempotencyRepository
 from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
 from app.persistence.postgres_user_identity import PostgresUserIdentityRepository
+from app.persistence.billing_ingestion_audit_contracts import (
+    BILLING_INGESTION_AUDIT_OPERATION,
+    BILLING_INGESTION_OUTCOME_ACCEPTED,
+    BILLING_INGESTION_OUTCOME_IDEMPOTENT_REPLAY,
+    BillingIngestionAuditRecord,
+    BillingIngestionAuditAppender,
+    InMemoryBillingIngestionAuditAppender,
+)
 from app.persistence.billing_events_ledger_in_memory import InMemoryBillingEventsLedgerRepository
 from app.persistence.postgres_billing_events_ledger import PostgresBillingEventsLedgerRepository
+from app.persistence.postgres_billing_ingestion_audit import PostgresBillingIngestionAuditAppender
 from app.persistence.mismatch_quarantine_in_memory import InMemoryMismatchQuarantineRepository
 from app.persistence.reconciliation_runs_in_memory import InMemoryReconciliationRunsRepository
 
@@ -77,6 +86,13 @@ __all__ = [
     "BillingEventsLedgerRepository",
     "BillingEventsLedgerUserSummary",
     "BillingFactsPresenceCategory",
+    "BILLING_INGESTION_AUDIT_OPERATION",
+    "BILLING_INGESTION_OUTCOME_ACCEPTED",
+    "BILLING_INGESTION_OUTCOME_IDEMPOTENT_REPLAY",
+    "BillingIngestionAuditRecord",
+    "BillingIngestionAuditAppender",
+    "InMemoryBillingIngestionAuditAppender",
+    "PostgresBillingIngestionAuditAppender",
     "InMemoryBillingEventsLedgerRepository",
     "InMemoryMismatchQuarantineRepository",
     "InMemoryReconciliationRunsRepository",

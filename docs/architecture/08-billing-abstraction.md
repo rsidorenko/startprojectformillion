@@ -511,6 +511,7 @@ Billing abstraction **запрещено**:
   - billing fact accepted/quarantined/rejected,
   - reconciliation started/completed,
   - triage actions (если есть).
+- **Internal normalized ingestion (без public webhook)**: append-only `billing_ingestion_audit_events` фиксирует факт приёма в `billing_events_ledger` (нормализованные поля, outcome `accepted` / `idempotent_replay`); **без** raw provider JSON, заголовков и подписей. Это **не** `slice1_audit_events` (отдельный ретеншен/граница).
 - Audit **не** хранит raw payload и **не** содержит секреты; только internal ids + external refs + reason codes.
 
 #### PII minimization boundaries

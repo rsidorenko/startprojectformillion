@@ -11,7 +11,14 @@ import asyncpg
 import pytest
 
 from app.application.billing_ingestion import IngestNormalizedBillingFactHandler, NormalizedBillingFactInput
-from app.persistence import BillingEventAmountCurrency, BillingEventLedgerStatus, PostgresBillingEventsLedgerRepository
+from app.persistence import (
+    BillingEventAmountCurrency,
+    BillingEventLedgerStatus,
+    BILLING_INGESTION_OUTCOME_ACCEPTED,
+    BILLING_INGESTION_OUTCOME_IDEMPOTENT_REPLAY,
+    PostgresBillingEventsLedgerRepository,
+    PostgresBillingIngestionAuditAppender,
+)
 from app.persistence.postgres_migrations import apply_postgres_migrations
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -36,7 +43,11 @@ async def _cleanup_and_migrate(pool: asyncpg.Pool) -> None:
     await apply_postgres_migrations(pool, migrations_directory=_MIGRATIONS_DIR)
     async with pool.acquire() as conn:
         await conn.execute(
-            "DELETE FROM billing_events_ledger WHERE internal_fact_ref LIKE $1::text",
+            "DELETE FROM billing_ingestion_audit_events WHERE external_event_id LIKE $1::text",
+            f"{_PREFIX}%",
+        )
+        await conn.execute(
+            "DELETE FROM billing_events_ledger WHERE external_event_id LIKE $1::text",
             f"{_PREFIX}%",
         )
 
@@ -47,7 +58,8 @@ def test_postgres_ingest_handler_persists_and_idempotent_replay(pg_url: str) -> 
         try:
             await _cleanup_and_migrate(pool)
             repo = PostgresBillingEventsLedgerRepository(pool)
-            handler = IngestNormalizedBillingFactHandler(repo)
+            audit = PostgresBillingIngestionAuditAppender(pool)
+            handler = IngestNormalizedBillingFactHandler(repo, audit)
             t0 = datetime(2026, 1, 10, 8, 0, 0, tzinfo=timezone.utc)
             t1 = datetime(2026, 1, 10, 8, 0, 1, tzinfo=timezone.utc)
             ext = f"{_PREFIX}ext-1"
@@ -85,6 +97,23 @@ def test_postgres_ingest_handler_persists_and_idempotent_replay(pg_url: str) -> 
             async with pool.acquire() as conn:
                 n = await conn.fetchval("SELECT count(*)::bigint FROM billing_events_ledger WHERE external_event_id = $1", ext)
             assert n == 1
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT outcome, is_idempotent_replay, internal_fact_ref, billing_event_status
+                    FROM billing_ingestion_audit_events
+                    WHERE external_event_id = $1::text
+                    ORDER BY occurred_at ASC, audit_event_id ASC
+                    """,
+                    ext,
+                )
+            assert len(rows) == 2
+            assert str(rows[0]["outcome"]) == BILLING_INGESTION_OUTCOME_ACCEPTED
+            assert str(rows[1]["outcome"]) == BILLING_INGESTION_OUTCOME_IDEMPOTENT_REPLAY
+            assert rows[0]["is_idempotent_replay"] is False
+            assert rows[1]["is_idempotent_replay"] is True
+            assert str(rows[0]["internal_fact_ref"]) == str(rows[1]["internal_fact_ref"]) == ref1
+            assert str(rows[0]["billing_event_status"]) == "accepted"
         finally:
             await pool.close()
 
