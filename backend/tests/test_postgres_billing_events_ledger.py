@@ -80,8 +80,7 @@ async def _cleanup_and_migrate(pool: asyncpg.Pool) -> None:
         )
 
 
-@pytest.mark.asyncio
-async def test_postgres_table_has_no_jsonb_and_expected_columns(pg_url: str) -> None:
+def test_postgres_table_has_no_jsonb_and_expected_columns(pg_url: str) -> None:
     async def main() -> None:
         pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
         try:
@@ -111,8 +110,7 @@ async def test_postgres_table_has_no_jsonb_and_expected_columns(pg_url: str) -> 
     asyncio.run(main())
 
 
-@pytest.mark.asyncio
-async def test_postgres_append_new_record_and_read_round_trip(pg_url: str) -> None:
+def test_postgres_append_new_record_and_read_round_trip(pg_url: str) -> None:
     async def main() -> None:
         pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
         try:
@@ -131,8 +129,7 @@ async def test_postgres_append_new_record_and_read_round_trip(pg_url: str) -> No
     asyncio.run(main())
 
 
-@pytest.mark.asyncio
-async def test_postgres_append_same_provider_and_external_id_is_idempotent(pg_url: str) -> None:
+def test_postgres_append_same_provider_and_external_id_is_idempotent(pg_url: str) -> None:
     async def main() -> None:
         pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
         try:
@@ -163,8 +160,7 @@ async def test_postgres_append_same_provider_and_external_id_is_idempotent(pg_ur
     asyncio.run(main())
 
 
-@pytest.mark.asyncio
-async def test_postgres_summary_for_user_without_accepted_is_none_category(pg_url: str) -> None:
+def test_postgres_summary_for_user_without_accepted_is_none_category(pg_url: str) -> None:
     async def main() -> None:
         pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
         try:
@@ -180,8 +176,7 @@ async def test_postgres_summary_for_user_without_accepted_is_none_category(pg_ur
     asyncio.run(main())
 
 
-@pytest.mark.asyncio
-async def test_postgres_summary_user_with_accepted_records_has_accepted(pg_url: str) -> None:
+def test_postgres_summary_user_with_accepted_records_has_accepted(pg_url: str) -> None:
     async def main() -> None:
         pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
         try:
@@ -225,8 +220,7 @@ async def test_postgres_summary_user_with_accepted_records_has_accepted(pg_url: 
     asyncio.run(main())
 
 
-@pytest.mark.asyncio
-async def test_postgres_summary_ignores_non_accepted_status(pg_url: str) -> None:
+def test_postgres_summary_ignores_non_accepted_status(pg_url: str) -> None:
     async def main() -> None:
         pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
         try:
@@ -258,8 +252,7 @@ async def test_postgres_summary_ignores_non_accepted_status(pg_url: str) -> None
     asyncio.run(main())
 
 
-@pytest.mark.asyncio
-async def test_postgres_append_preserves_order_in_summary_deterministic(pg_url: str) -> None:
+def test_postgres_append_preserves_order_in_summary_deterministic(pg_url: str) -> None:
     """ORDER BY event_received_at ASC, internal_fact_ref ASC matches in-memory for monotonic times."""
 
     async def main() -> None:
@@ -294,8 +287,7 @@ async def test_postgres_append_preserves_order_in_summary_deterministic(pg_url: 
     asyncio.run(main())
 
 
-@pytest.mark.asyncio
-async def test_postgres_amount_currency_none_round_trip(pg_url: str) -> None:
+def test_postgres_amount_currency_none_round_trip(pg_url: str) -> None:
     async def main() -> None:
         pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
         try:
@@ -324,8 +316,7 @@ async def test_postgres_amount_currency_none_round_trip(pg_url: str) -> None:
     asyncio.run(main())
 
 
-@pytest.mark.asyncio
-async def test_adm02_adapter_with_postgres_ledger_and_two_users(pg_url: str) -> None:
+def test_adm02_adapter_with_postgres_ledger_and_two_users(pg_url: str) -> None:
     async def main() -> None:
         pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
         try:
