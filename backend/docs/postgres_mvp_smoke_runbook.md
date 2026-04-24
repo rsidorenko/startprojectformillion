@@ -65,7 +65,7 @@ Expected CI commands (from `backend`):
 python -m pip install -e .[test]
 docker --version
 docker compose version
-python -m pytest -q tests/test_run_postgres_mvp_smoke_local.py tests/test_run_postgres_mvp_smoke.py tests/test_run_slice1_retention_dry_run.py --junitxml=.test-reports/backend-smoke-helper-regression.xml
+python -m pytest -q tests/test_run_postgres_mvp_smoke_local.py tests/test_run_postgres_mvp_smoke.py tests/test_run_slice1_retention_dry_run.py --junitxml=test-reports/backend-smoke-helper-regression.xml
 python scripts/run_postgres_mvp_smoke_local.py
 ```
 
@@ -74,13 +74,14 @@ Notes:
 - Local runner sets local-only `DATABASE_URL` and mutating-test opt-in guard automatically for child smoke.
 - Do not replace this with manual external `DATABASE_URL` smoke in CI.
 - Cursor-driven manual dispatch still requires installed/authenticated `gh`, but normal push-triggered CI does not require local `gh`.
-- CI writes reports from `backend` working directory using backend-relative `REPORT_DIR=.test-reports`, then uploads artifact `backend-postgres-mvp-smoke-validation-reports` from repo-root path `backend/.test-reports`.
+- CI writes reports from `backend` working directory using backend-relative `REPORT_DIR=test-reports`, then uploads artifact `backend-postgres-mvp-smoke-validation-reports` from repo-root path `backend/test-reports`.
+- CI uses a non-hidden reports directory so artifact collection remains `actions/upload-artifact` friendly.
 - Artifact includes:
   - `backend-smoke-helper-regression.xml` (JUnit for helper regression);
   - `backend-postgres-mvp-smoke-local.log` (raw smoke command output);
   - `backend-postgres-mvp-smoke-local-summary.txt` (safe tail summary for quick triage).
 - Before artifact upload, workflow runs explicit evidence verification and fails if reports directory is missing or contains no files.
-- Any warning like `No files were found with the provided path: backend/.test-reports` must be treated as CI evidence issue even if the job result is green, because expected diagnostics were not persisted.
+- Any warning like `No files were found with the provided path: backend/test-reports` must be treated as CI evidence issue even if the job result is green, because expected diagnostics were not persisted.
 - Use the JUnit XML to distinguish outcomes in CI:
   - passed tests are reported as successful test cases;
   - skipped tests are explicitly marked as skipped with reason when provided by pytest;

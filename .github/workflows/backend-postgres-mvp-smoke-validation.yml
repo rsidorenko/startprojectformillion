@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      REPORT_DIR: .test-reports
+      REPORT_DIR: test-reports
     defaults:
       run:
         working-directory: backend
@@ -112,5 +112,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backend-postgres-mvp-smoke-validation-reports
-          path: backend/.test-reports
+          path: backend/test-reports
           if-no-files-found: warn
