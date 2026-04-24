@@ -179,6 +179,21 @@ def test_get_status_known_default_inactive_fail_closed() -> None:
     _run(main())
 
 
+def test_get_status_known_user_needs_review_snapshot() -> None:
+    async def main() -> None:
+        ident = _FakeIdentityRepo()
+        await ident.create_if_absent(51)
+        snap = SubscriptionSnapshot(internal_user_id="u51", state_label="needs_review")
+        h = GetSubscriptionStatusHandler(ident, _FakeSnapshots({"u51": snap}))
+        cid = new_correlation_id()
+        r = await h.handle(GetSubscriptionStatusInput(telegram_user_id=51, correlation_id=cid))
+        assert r.outcome is OperationOutcomeCategory.SUCCESS
+        assert r.safe_status is SafeUserStatusCategory.NEEDS_REVIEW
+        assert r.user_safe is None
+
+    _run(main())
+
+
 def test_get_status_no_audit_dependency() -> None:
     """UC-02 handler has no audit appender; orchestration stays read-only."""
 

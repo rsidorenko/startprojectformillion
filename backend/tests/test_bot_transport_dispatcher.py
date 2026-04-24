@@ -6,6 +6,7 @@ import asyncio
 import inspect
 
 from app.application.bootstrap import build_slice1_composition
+from app.application.interfaces import SubscriptionSnapshot
 from app.bot_transport.dispatcher import Slice1Dispatcher, dispatch_slice1_transport
 from app.bot_transport.normalized import TransportIncomingEnvelope
 from app.bot_transport.presentation import (
@@ -13,7 +14,14 @@ from app.bot_transport.presentation import (
     TransportErrorCode,
     TransportNextActionHint,
     TransportResponseCategory,
+    TransportSafeResponse,
     TransportStatusCode,
+)
+from app.persistence.in_memory import (
+    InMemoryAuditAppender,
+    InMemoryIdempotencyRepository,
+    InMemorySubscriptionSnapshotReader,
+    InMemoryUserIdentityRepository,
 )
 from app.shared.correlation import new_correlation_id
 
@@ -35,6 +43,24 @@ def _env(
         telegram_update_id=update_id,
         normalized_command_text=text,
     )
+
+
+def _uc02_transport_public_surface(r: TransportSafeResponse) -> str:
+    """Concatenate only transport-facing fields (for leak assertions)."""
+    hint = r.next_action_hint or ""
+    return f"{r.category.value!s}{r.code!s}{r.correlation_id!s}{hint}"
+
+
+def _assert_uc02_transport_has_no_sensitive_leaks(
+    r: TransportSafeResponse,
+    *,
+    forbidden_substrings: tuple[str, ...],
+) -> None:
+    blob = _uc02_transport_public_surface(r).lower()
+    for s in forbidden_substrings:
+        assert s.lower() not in blob, f"unexpected substring in transport surface: {s!r}"
+    assert "postgresql://" not in blob
+    assert "postgres://" not in blob
 
 
 def test_dispatch_start_bootstrap_success() -> None:
@@ -69,11 +95,13 @@ def test_dispatch_status_bootstrapped_no_snapshot_fail_closed() -> None:
         c = build_slice1_composition()
         cid = new_correlation_id()
         uid = 77
+        internal = f"u{uid}"
         await dispatch_slice1_transport(_env(cid=cid, uid=uid, update_id=2, text="/start"), c)
         r = await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
         assert r.category is TransportResponseCategory.SUCCESS
         assert r.code == TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value
         assert r.correlation_id == cid
+        _assert_uc02_transport_has_no_sensitive_leaks(r, forbidden_substrings=(internal,))
 
     _run(main())
 
@@ -87,6 +115,60 @@ def test_dispatch_status_unknown_user_onboarding_guidance() -> None:
         assert r.code == TransportStatusCode.NEEDS_ONBOARDING.value
         assert r.next_action_hint == TransportNextActionHint.COMPLETE_BOOTSTRAP.value
         assert r.correlation_id == cid
+        _assert_uc02_transport_has_no_sensitive_leaks(r, forbidden_substrings=("u999",))
+
+    _run(main())
+
+
+def test_dispatch_status_needs_review_when_snapshot_requires_review() -> None:
+    """Persisted-style snapshot label maps to transport UC-02 code (deterministic, in-memory)."""
+
+    async def main() -> None:
+        snaps = InMemorySubscriptionSnapshotReader()
+        c = build_slice1_composition(
+            identity=InMemoryUserIdentityRepository(),
+            idempotency=InMemoryIdempotencyRepository(),
+            snapshots=snaps,
+            audit=InMemoryAuditAppender(),
+        )
+        cid = new_correlation_id()
+        uid = 42
+        internal = f"u{uid}"
+        await dispatch_slice1_transport(_env(cid=cid, uid=uid, update_id=3, text="/start"), c)
+        await snaps.upsert_for_tests(
+            internal,
+            SubscriptionSnapshot(internal_user_id=internal, state_label="needs_review"),
+        )
+        r = await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
+        assert r.category is TransportResponseCategory.SUCCESS
+        assert r.code == TransportStatusCode.NEEDS_REVIEW.value
+        assert r.correlation_id == cid
+        _assert_uc02_transport_has_no_sensitive_leaks(r, forbidden_substrings=(internal,))
+
+    _run(main())
+
+
+def test_dispatch_status_known_user_missing_snapshot_row_fail_closed() -> None:
+    """Known identity + absent snapshot row => same fail-closed inactive transport as default inactive."""
+
+    async def main() -> None:
+        snaps = InMemorySubscriptionSnapshotReader()
+        c = build_slice1_composition(
+            identity=InMemoryUserIdentityRepository(),
+            idempotency=InMemoryIdempotencyRepository(),
+            snapshots=snaps,
+            audit=InMemoryAuditAppender(),
+        )
+        cid = new_correlation_id()
+        uid = 55
+        internal = f"u{uid}"
+        await dispatch_slice1_transport(_env(cid=cid, uid=uid, update_id=4, text="/start"), c)
+        await snaps.upsert_for_tests(internal, None)
+        r = await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
+        assert r.category is TransportResponseCategory.SUCCESS
+        assert r.code == TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value
+        assert r.correlation_id == cid
+        _assert_uc02_transport_has_no_sensitive_leaks(r, forbidden_substrings=(internal,))
 
     _run(main())
 
