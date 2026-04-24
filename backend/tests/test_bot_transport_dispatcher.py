@@ -12,6 +12,7 @@ from app.bot_transport.normalized import TransportIncomingEnvelope
 from app.bot_transport.presentation import (
     TransportBootstrapCode,
     TransportErrorCode,
+    TransportHelpCode,
     TransportNextActionHint,
     TransportResponseCategory,
     TransportSafeResponse,
@@ -169,6 +170,39 @@ def test_dispatch_status_known_user_missing_snapshot_row_fail_closed() -> None:
         assert r.code == TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value
         assert r.correlation_id == cid
         _assert_uc02_transport_has_no_sensitive_leaks(r, forbidden_substrings=(internal,))
+
+    _run(main())
+
+
+def test_dispatch_help_read_only_no_handlers() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        r = await dispatch_slice1_transport(_env(cid=cid, text="/help"), c)
+        assert r.category is TransportResponseCategory.SUCCESS
+        assert r.code == TransportHelpCode.SLICE1_HELP.value
+        assert r.replay_suppresses_outbound is False
+        assert r.uc01_idempotency_key is None
+        assert r.correlation_id == cid
+        assert len(await c.audit.recorded_events()) == 0
+
+    _run(main())
+
+
+def test_dispatch_help_then_start_only_bootstrap_audit() -> None:
+    """Help must not run UC-01; first audit event appears only on /start."""
+
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        h = await dispatch_slice1_transport(_env(cid=cid, uid=11, text="/help"), c)
+        assert h.code == TransportHelpCode.SLICE1_HELP.value
+        s = await dispatch_slice1_transport(
+            _env(cid=cid, uid=11, text="/start", update_id=1),
+            c,
+        )
+        assert s.code == TransportBootstrapCode.IDENTITY_READY.value
+        assert len(await c.audit.recorded_events()) == 1
 
     _run(main())
 

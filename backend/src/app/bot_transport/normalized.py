@@ -18,6 +18,7 @@ _MAX_COMMAND_TOKEN_LEN = 64
 
 _SLICE1_BOOTSTRAP_COMMANDS: frozenset[str] = frozenset({"/start"})
 _SLICE1_STATUS_COMMANDS: frozenset[str] = frozenset({"/status"})
+_SLICE1_HELP_COMMANDS: frozenset[str] = frozenset({"/help"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,12 +53,22 @@ class NormalizedSlice1Status:
 
 
 @dataclass(frozen=True, slots=True)
+class NormalizedSlice1Help:
+    """Read-only /help: correlation id for transport only; no application handler inputs."""
+
+    correlation_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class NormalizedSlice1Rejected:
     reason: NormalizationRejectReason
 
 
 NormalizedSlice1Result = (
-    NormalizedSlice1Bootstrap | NormalizedSlice1Status | NormalizedSlice1Rejected
+    NormalizedSlice1Bootstrap
+    | NormalizedSlice1Status
+    | NormalizedSlice1Help
+    | NormalizedSlice1Rejected
 )
 
 
@@ -123,5 +134,8 @@ def parse_slice1_transport(envelope: TransportIncomingEnvelope) -> NormalizedSli
                 correlation_id=envelope.correlation_id,
             ),
         )
+
+    if token in _SLICE1_HELP_COMMANDS:
+        return NormalizedSlice1Help(correlation_id=envelope.correlation_id)
 
     return NormalizedSlice1Rejected(reason=NormalizationRejectReason.UNKNOWN_COMMAND)

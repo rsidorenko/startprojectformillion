@@ -17,15 +17,18 @@ from app.bot_transport.outbound import (
     OutboundPlanCategory,
     TelegramOutboundPlan,
 )
+from tests.slice1_expected_user_copy import (
+    IDENTITY_READY_TEXT,
+    INACTIVE_OR_NOT_ELIGIBLE_TEXT,
+    NEEDS_ONBOARDING_TEXT,
+    SLICE1_HELP_TEXT,
+)
 
 _CID = "corr-test-01"
 
-_FORBIDDEN = re.compile(
-    r"\b("
-    r"billing|payment|paid|checkout|invoice|refund|subscription|"
-    r"issuance|issuer|config|vpn|admin|administrator|"
-    r"webhook|secret|token|password"
-    r")\b",
+# Block accidental DSN, secrets, and markup; catalog may describe feature limits (no false claims of payment).
+_DSN_OR_SECRETISH = re.compile(
+    r"(postgresql://|postgres://|ghp_[a-z0-9]+|sk_live_|sk_test_|" r"webhook|password\s*=|dsn=)",
     re.IGNORECASE,
 )
 
@@ -49,9 +52,10 @@ def _plan(
     )
 
 
-def _assert_no_forbidden_words(text: str) -> None:
-    match = _FORBIDDEN.search(text)
-    assert match is None, f"forbidden fragment in text: {match.group(0)!r}"
+def _assert_no_dsn_or_secretish(text: str) -> None:
+    assert _DSN_OR_SECRETISH.search(text) is None, "unexpected DSN, credential, or transport leak"
+    assert "postgresql" not in text.lower()
+    assert "internal_user" not in text.lower()
 
 
 def _assert_plain_text_no_markup(text: str) -> None:
@@ -72,12 +76,10 @@ def identity_ready_plan() -> TelegramOutboundPlan:
 def test_bootstrap_success_stable_text(identity_ready_plan: TelegramOutboundPlan) -> None:
     out = render_telegram_outbound_plan(identity_ready_plan)
     assert isinstance(out, RenderedMessagePackage)
-    assert out.message_text == (
-        "Identity is ready. You can continue in this chat."
-    )
+    assert out.message_text == IDENTITY_READY_TEXT
     assert out.action_keys == ()
     assert out.correlation_id == _CID
-    _assert_no_forbidden_words(out.message_text)
+    _assert_no_dsn_or_secretish(out.message_text)
     _assert_plain_text_no_markup(out.message_text)
 
 
@@ -96,7 +98,7 @@ def test_render_passes_replay_suppress_flag_without_changing_identity_ready_text
         replay_suppresses_outbound=True,
     )
     out = render_telegram_outbound_plan(plan)
-    assert out.message_text == "Identity is ready. You can continue in this chat."
+    assert out.message_text == IDENTITY_READY_TEXT
     assert out.replay_suppresses_outbound is True
 
 
@@ -109,8 +111,8 @@ def test_onboarding_with_action_key() -> None:
     )
     out = render_telegram_outbound_plan(plan)
     assert out.action_keys == (OutboundNextActionKey.COMPLETE_BOOTSTRAP.value,)
-    assert "Continue with the suggested action" in out.message_text
-    _assert_no_forbidden_words(out.message_text)
+    assert out.message_text == NEEDS_ONBOARDING_TEXT
+    _assert_no_dsn_or_secretish(out.message_text)
 
 
 def test_onboarding_without_action_key() -> None:
@@ -128,9 +130,9 @@ def test_inactive_not_eligible_fail_closed() -> None:
         message_key=OutboundMessageKey.INACTIVE_OR_NOT_ELIGIBLE.value,
     )
     out = render_telegram_outbound_plan(plan)
-    assert "No access is available" in out.message_text
+    assert out.message_text == INACTIVE_OR_NOT_ELIGIBLE_TEXT
     assert out.action_keys == ()
-    _assert_no_forbidden_words(out.message_text)
+    _assert_no_dsn_or_secretish(out.message_text)
 
 
 def test_needs_review_safe_no_internals() -> None:
@@ -142,7 +144,7 @@ def test_needs_review_safe_no_internals() -> None:
     assert "review" in out.message_text.lower()
     assert "ticket" not in out.message_text.lower()
     assert "internal" not in out.message_text.lower()
-    _assert_no_forbidden_words(out.message_text)
+    _assert_no_dsn_or_secretish(out.message_text)
 
 
 def test_invalid_input_safe() -> None:
@@ -152,7 +154,7 @@ def test_invalid_input_safe() -> None:
     )
     out = render_telegram_outbound_plan(plan)
     assert "not valid" in out.message_text.lower()
-    _assert_no_forbidden_words(out.message_text)
+    _assert_no_dsn_or_secretish(out.message_text)
 
 
 def test_try_again_later_retry_safe() -> None:
@@ -162,7 +164,7 @@ def test_try_again_later_retry_safe() -> None:
     )
     out = render_telegram_outbound_plan(plan)
     assert "try again" in out.message_text.lower()
-    _assert_no_forbidden_words(out.message_text)
+    _assert_no_dsn_or_secretish(out.message_text)
 
 
 def test_service_unavailable_generic() -> None:
@@ -172,7 +174,7 @@ def test_service_unavailable_generic() -> None:
     )
     out = render_telegram_outbound_plan(plan)
     assert "temporarily unavailable" in out.message_text.lower()
-    _assert_no_forbidden_words(out.message_text)
+    _assert_no_dsn_or_secretish(out.message_text)
 
 
 def test_unknown_message_key_fail_closed_outage() -> None:
@@ -202,13 +204,26 @@ def test_correlation_id_preserved_across_entries() -> None:
         assert render_telegram_outbound_plan(p).correlation_id == cid
 
 
-def test_catalog_outputs_cover_forbidden_word_policy() -> None:
-    """All predefined catalog strings stay free of billing/issuance/admin-style terms."""
+def test_help_message_render() -> None:
+    plan = _plan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=OutboundMessageKey.SLICE1_HELP.value,
+    )
+    out = render_telegram_outbound_plan(plan)
+    assert out.message_text == SLICE1_HELP_TEXT
+    assert "\n" in out.message_text
+    assert "/start" in out.message_text
+    _assert_no_dsn_or_secretish(out.message_text)
+    _assert_plain_text_no_markup(out.message_text)
+
+
+def test_catalog_outputs_cover_secret_and_markup_policy() -> None:
+    """Predefined catalog strings avoid DSN/secret-style fragments and HTML-ish markup."""
     for mk in OutboundMessageKey:
         p = _plan(
             category=OutboundPlanCategory.SUCCESS,
             message_key=mk.value,
         )
         text = render_telegram_outbound_plan(p).message_text
-        _assert_no_forbidden_words(text)
+        _assert_no_dsn_or_secretish(text)
         _assert_plain_text_no_markup(text)

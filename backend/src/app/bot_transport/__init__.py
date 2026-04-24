@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.bot_transport.normalized import (
     NormalizationRejectReason,
     NormalizedSlice1Bootstrap,
+    NormalizedSlice1Help,
     NormalizedSlice1Rejected,
     NormalizedSlice1Result,
     NormalizedSlice1Status,
@@ -43,12 +44,14 @@ from app.bot_transport.outbound import (
     map_transport_safe_to_outbound_plan,
 )
 from app.bot_transport.presentation import (
+    TransportHelpCode,
     TransportNextActionHint,
     TransportResponseCategory,
     TransportSafeResponse,
     TransportStatusCode,
     map_bootstrap_identity_to_transport,
     map_get_subscription_status_to_transport,
+    map_slice1_help_to_transport,
 )
 
 __all__ = [
@@ -66,18 +69,21 @@ __all__ = [
     "extract_slice1_envelope_from_telegram_update",
     "NormalizationRejectReason",
     "NormalizedSlice1Bootstrap",
+    "NormalizedSlice1Help",
     "NormalizedSlice1Rejected",
     "NormalizedSlice1Result",
     "NormalizedSlice1Status",
     "TransportIncomingEnvelope",
     "Slice1Dispatcher",
     "dispatch_slice1_transport",
+    "TransportHelpCode",
     "TransportNextActionHint",
     "TransportResponseCategory",
     "TransportSafeResponse",
     "TransportStatusCode",
     "map_bootstrap_identity_to_transport",
     "map_get_subscription_status_to_transport",
+    "map_slice1_help_to_transport",
     "OutboundKeyboardMarker",
     "OutboundMessageKey",
     "OutboundNextActionKey",

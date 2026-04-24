@@ -11,6 +11,7 @@ from enum import Enum
 from app.bot_transport.presentation import (
     TransportBootstrapCode,
     TransportErrorCode,
+    TransportHelpCode,
     TransportNextActionHint,
     TransportResponseCategory,
     TransportSafeResponse,
@@ -36,6 +37,7 @@ class OutboundMessageKey(str, Enum):
     INVALID_INPUT = "invalid_input"
     TRY_AGAIN_LATER = "try_again_later"
     SERVICE_UNAVAILABLE = "service_unavailable"
+    SLICE1_HELP = "slice1_help"
 
 
 class OutboundNextActionKey(str, Enum):
@@ -103,6 +105,16 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 correlation_id=cid,
                 replay_suppresses_outbound=transport.replay_suppresses_outbound,
                 uc01_idempotency_key=transport.uc01_idempotency_key,
+            )
+        if code == TransportHelpCode.SLICE1_HELP.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.SLICE1_HELP.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                correlation_id=cid,
+                replay_suppresses_outbound=False,
+                uc01_idempotency_key=None,
             )
         if code == TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value:
             return TelegramOutboundPlan(

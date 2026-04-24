@@ -20,6 +20,7 @@ from app.bot_transport.presentation import (
     TransportStatusCode,
     map_bootstrap_identity_to_transport,
     map_get_subscription_status_to_transport,
+    map_slice1_help_to_transport,
 )
 from app.security.errors import UserSafeErrorCode
 from app.shared.correlation import new_correlation_id
@@ -44,6 +45,16 @@ def _plan_strings_lower(plan: TelegramOutboundPlan) -> str:
         plan.category.value,
     ]
     return " ".join(parts).lower()
+
+
+def test_help_read_only_outbound_message_key() -> None:
+    cid = new_correlation_id()
+    safe = map_slice1_help_to_transport(cid)
+    plan = map_transport_safe_to_outbound_plan(safe)
+    assert plan.message_key == OutboundMessageKey.SLICE1_HELP.value
+    assert plan.replay_suppresses_outbound is False
+    assert plan.uc01_idempotency_key is None
+    assert plan.correlation_id == cid
 
 
 def test_bootstrap_success_stable_message_key() -> None:

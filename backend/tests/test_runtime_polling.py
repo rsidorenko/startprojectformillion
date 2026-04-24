@@ -88,7 +88,7 @@ def test_polling_batch_one_start_one_send() -> None:
         )
         assert len(client.send_calls) == 1
         assert client.send_calls[0][0] == 42
-        assert "Identity is ready" in client.send_calls[0][1]
+        assert "You are set up" in client.send_calls[0][1]
 
     _run(main())
 
@@ -123,7 +123,7 @@ def test_status_unknown_user_sends_onboarding() -> None:
         r = await rt.process_batch([raw], correlation_id=new_correlation_id())
         assert r.send_count == 1
         assert client.send_calls[0][0] == 999
-        assert "Continue with the suggested action" in client.send_calls[0][1]
+        assert "Send /start" in client.send_calls[0][1]
 
     _run(main())
 
@@ -264,7 +264,7 @@ def test_poll_once_start_one_send() -> None:
         assert r.send_count == 1
         assert len(client.send_calls) == 1
         assert client.send_calls[0][0] == 42
-        assert "Identity is ready" in client.send_calls[0][1]
+        assert "You are set up" in client.send_calls[0][1]
 
     _run(main())
 
@@ -359,6 +359,6 @@ def test_status_path_unchanged_with_ledger() -> None:
         raw = _update(update_id=20, message=_base_message(user_id=500, text="/status"))
         r = await rt.process_batch([raw], correlation_id=new_correlation_id())
         assert r.send_count == 1
-        assert "Continue with the suggested action" in client.send_calls[0][1]
+        assert "Send /start" in client.send_calls[0][1]
 
     _run(main())

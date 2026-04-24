@@ -7,6 +7,8 @@ import inspect
 
 import app.runtime.startup as startup_mod
 
+from tests.slice1_expected_user_copy import INACTIVE_OR_NOT_ELIGIBLE_TEXT
+
 from app.runtime import (
     PollingRuntimeConfig,
     Slice1InMemoryRuntimeBundle,
@@ -114,14 +116,14 @@ def test_bundle_e2e_start_send_then_status_fail_closed() -> None:
             correlation_id=cid,
         )
         assert len(client.send_calls) == 1
-        assert "Identity is ready" in client.send_calls[0][1]
+        assert "You are set up" in client.send_calls[0][1]
         await bundle.runtime.process_batch(
             [_update(message=_base_message(user_id=uid, text="/status"))],
             correlation_id=cid,
         )
         assert len(client.send_calls) == 2
         assert client.send_calls[1][0] == uid
-        assert client.send_calls[1][1] == "No access is available for this account right now."
+        assert client.send_calls[1][1] == INACTIVE_OR_NOT_ELIGIBLE_TEXT
 
     _run(main())
 

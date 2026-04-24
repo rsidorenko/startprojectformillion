@@ -8,6 +8,7 @@ from app.application.handlers import BootstrapIdentityInput, GetSubscriptionStat
 from app.bot_transport.normalized import (
     NormalizationRejectReason,
     NormalizedSlice1Bootstrap,
+    NormalizedSlice1Help,
     NormalizedSlice1Rejected,
     NormalizedSlice1Status,
     TransportIncomingEnvelope,
@@ -72,6 +73,34 @@ def test_status_maps_to_status_input() -> None:
         telegram_user_id=55,
         correlation_id=cid,
     )
+
+
+def test_help_maps_to_read_only_envelope() -> None:
+    cid = new_correlation_id()
+    r = parse_slice1_transport(
+        TransportIncomingEnvelope(
+            telegram_user_id=8,
+            correlation_id=cid,
+            telegram_update_id=None,
+            normalized_command_text="/help",
+        ),
+    )
+    assert isinstance(r, NormalizedSlice1Help)
+    assert r.correlation_id == cid
+
+
+def test_help_with_bot_suffix_normalized() -> None:
+    cid = new_correlation_id()
+    r = parse_slice1_transport(
+        TransportIncomingEnvelope(
+            telegram_user_id=1,
+            correlation_id=cid,
+            telegram_update_id=3,
+            normalized_command_text="/help@SomeBot",
+        ),
+    )
+    assert isinstance(r, NormalizedSlice1Help)
+    assert r.correlation_id == cid
 
 
 def test_unknown_command_rejected() -> None:

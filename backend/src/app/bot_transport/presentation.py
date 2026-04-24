@@ -38,6 +38,12 @@ class TransportErrorCode(str, Enum):
     SERVICE_UNAVAILABLE = "service_unavailable"
 
 
+class TransportHelpCode(str, Enum):
+    """Read-only slice-1 help; no application handler, no state change."""
+
+    SLICE1_HELP = "slice1_help"
+
+
 class TransportNextActionHint(str, Enum):
     COMPLETE_BOOTSTRAP = "complete_bootstrap"
 
@@ -102,6 +108,18 @@ def map_bootstrap_identity_to_transport(result: BootstrapIdentityResult) -> Tran
             uc01_idempotency_key=result.uc01_idempotency_key,
         )
     return _transport_error(TransportResponseCategory.ERROR, result.user_safe, cid)
+
+
+def map_slice1_help_to_transport(correlation_id: str) -> TransportSafeResponse:
+    """Map /help to a transport success path without invoking UC-01/UC-02 handlers."""
+    return TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportHelpCode.SLICE1_HELP.value,
+        correlation_id=correlation_id,
+        next_action_hint=None,
+        replay_suppresses_outbound=False,
+        uc01_idempotency_key=None,
+    )
 
 
 def map_get_subscription_status_to_transport(

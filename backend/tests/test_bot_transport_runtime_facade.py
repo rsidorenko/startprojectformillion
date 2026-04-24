@@ -13,6 +13,12 @@ from app.bot_transport.runtime_facade import (
 )
 from app.security.idempotency import build_bootstrap_idempotency_key
 from app.shared.correlation import is_valid_correlation_id, new_correlation_id
+from tests.slice1_expected_user_copy import (
+    IDENTITY_READY_TEXT,
+    INACTIVE_OR_NOT_ELIGIBLE_TEXT,
+    NEEDS_ONBOARDING_TEXT,
+    SLICE1_HELP_TEXT,
+)
 
 
 def _run(coro):
@@ -46,7 +52,7 @@ def test_facade_raw_private_start_returns_identity_ready_rendered() -> None:
         raw = _update(message=_base_message(text="/start"))
         pkg = await handle_slice1_telegram_update_to_rendered_message(raw, c, correlation_id=cid)
         assert isinstance(pkg, RenderedMessagePackage)
-        assert pkg.message_text == "Identity is ready. You can continue in this chat."
+        assert pkg.message_text == IDENTITY_READY_TEXT
         assert pkg.action_keys == ()
         assert pkg.correlation_id == cid
         assert pkg.uc01_idempotency_key == build_bootstrap_idempotency_key(42, 1)
@@ -77,7 +83,7 @@ def test_facade_raw_status_unknown_user_onboarding_guidance_rendered() -> None:
         cid = new_correlation_id()
         raw = _update(update_id=99, message=_base_message(user_id=999, text="/status"))
         pkg = await handle_slice1_telegram_update_to_rendered_message(raw, c, correlation_id=cid)
-        assert pkg.message_text == "Continue with the suggested action to use this bot."
+        assert pkg.message_text == NEEDS_ONBOARDING_TEXT
         assert pkg.action_keys == ("complete_bootstrap",)
         assert pkg.correlation_id == cid
         assert pkg.uc01_idempotency_key is None
@@ -100,7 +106,7 @@ def test_facade_raw_status_after_bootstrap_no_snapshot_fail_closed_rendered() ->
             c,
             correlation_id=cid,
         )
-        assert pkg.message_text == "No access is available for this account right now."
+        assert pkg.message_text == INACTIVE_OR_NOT_ELIGIBLE_TEXT
         assert pkg.correlation_id == cid
 
     _run(main())
@@ -187,7 +193,20 @@ def test_slice1_telegram_runtime_facade_delegates() -> None:
         raw = _update(message=_base_message(text="/start"))
         facade = Slice1TelegramRuntimeFacade()
         pkg = await facade.handle_update_to_rendered_message(raw, c, correlation_id=cid)
-        assert pkg.message_text == "Identity is ready. You can continue in this chat."
+        assert pkg.message_text == IDENTITY_READY_TEXT
         assert pkg.correlation_id == cid
+
+    _run(main())
+
+
+def test_facade_raw_private_help_read_only() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        raw = _update(message=_base_message(text="/help"))
+        pkg = await handle_slice1_telegram_update_to_rendered_message(raw, c, correlation_id=cid)
+        assert pkg.message_text == SLICE1_HELP_TEXT
+        assert pkg.uc01_idempotency_key is None
+        assert len(await c.audit.recorded_events()) == 0
 
     _run(main())

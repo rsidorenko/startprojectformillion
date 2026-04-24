@@ -15,6 +15,7 @@ from app.runtime.live_startup import (
 )
 from app.runtime.polling import PollingRuntimeConfig
 from app.shared.correlation import new_correlation_id
+from tests.slice1_expected_user_copy import INACTIVE_OR_NOT_ELIGIBLE_TEXT
 
 
 def _run(coro):
@@ -153,7 +154,7 @@ def test_e2e_two_live_iterations_start_then_status_fail_closed_inactive() -> Non
     start_u = _update(update_id=1, message=_base_message(user_id=uid, text="/start"))
     status_u = _update(update_id=2, message=_base_message(user_id=uid, text="/status"))
     client = FakeRawClient(rounds=[[start_u], [status_u]])
-    inactive = "No access is available for this account right now."
+    inactive = INACTIVE_OR_NOT_ELIGIBLE_TEXT
 
     async def main() -> None:
         b = build_slice1_in_memory_live_raw_runtime_bundle(client, accept_mapping_runtime_update)

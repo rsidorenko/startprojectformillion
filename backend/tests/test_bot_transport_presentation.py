@@ -7,12 +7,14 @@ from dataclasses import fields
 from app.application.handlers import BootstrapIdentityResult, GetSubscriptionStatusResult
 from app.bot_transport.presentation import (
     TransportBootstrapCode,
+    TransportHelpCode,
     TransportNextActionHint,
     TransportResponseCategory,
     TransportSafeResponse,
     TransportStatusCode,
     map_bootstrap_identity_to_transport,
     map_get_subscription_status_to_transport,
+    map_slice1_help_to_transport,
 )
 from app.security.errors import UserSafeErrorCode
 from app.shared.correlation import new_correlation_id
@@ -167,3 +169,16 @@ def test_response_codes_exclude_billing_issuance_admin() -> None:
     assert "billing" not in lowered
     assert "issuance" not in lowered
     assert "admin" not in lowered
+
+
+def test_map_slice1_help_read_only() -> None:
+    cid = new_correlation_id()
+    r = map_slice1_help_to_transport(cid)
+    assert r == TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportHelpCode.SLICE1_HELP.value,
+        correlation_id=cid,
+        next_action_hint=None,
+        replay_suppresses_outbound=False,
+        uc01_idempotency_key=None,
+    )

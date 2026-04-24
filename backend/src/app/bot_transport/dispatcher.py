@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.application.bootstrap import Slice1Composition
 from app.bot_transport.normalized import (
     NormalizedSlice1Bootstrap,
+    NormalizedSlice1Help,
     NormalizedSlice1Rejected,
     NormalizedSlice1Status,
     TransportIncomingEnvelope,
@@ -16,6 +17,7 @@ from app.bot_transport.presentation import (
     TransportSafeResponse,
     map_bootstrap_identity_to_transport,
     map_get_subscription_status_to_transport,
+    map_slice1_help_to_transport,
 )
 
 
@@ -35,13 +37,15 @@ async def dispatch_slice1_transport(
     composition: Slice1Composition,
 ) -> TransportSafeResponse:
     """
-    Parse ingress, route to UC-01 / UC-02 handlers on the given composition, map to transport.
+    Parse ingress, route to UC-01 / UC-02 handlers (or /help) on the given composition, map to transport.
     Unknown commands and invalid transport fields are rejected before handlers; correlation id is echoed.
     """
     parsed = parse_slice1_transport(envelope)
     match parsed:
         case NormalizedSlice1Rejected():
             return _normalization_reject_response(envelope)
+        case NormalizedSlice1Help(correlation_id=help_cid):
+            return map_slice1_help_to_transport(help_cid)
         case NormalizedSlice1Bootstrap(input=bootstrap_input):
             result = await composition.bootstrap.handle(bootstrap_input)
             return map_bootstrap_identity_to_transport(result)

@@ -9,6 +9,7 @@ from app.application.bootstrap import build_slice1_composition
 from app.bot_transport.presentation import (
     TransportBootstrapCode,
     TransportErrorCode,
+    TransportHelpCode,
     TransportNextActionHint,
     TransportResponseCategory,
     TransportSafeResponse,
@@ -40,6 +41,22 @@ def _update(
     u: dict[str, object] = {"update_id": update_id, "message": message}
     u.update(extra)
     return u
+
+
+def test_service_raw_help_read_only() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        raw = _update(message=_base_message(text="/help"))
+        r = await handle_slice1_telegram_update(raw, c, correlation_id=cid)
+        assert r.category is TransportResponseCategory.SUCCESS
+        assert r.code == TransportHelpCode.SLICE1_HELP.value
+        assert r.replay_suppresses_outbound is False
+        assert r.uc01_idempotency_key is None
+        assert r.correlation_id == cid
+        assert len(await c.audit.recorded_events()) == 0
+
+    _run(main())
 
 
 def test_service_raw_private_start_bootstrap_success() -> None:

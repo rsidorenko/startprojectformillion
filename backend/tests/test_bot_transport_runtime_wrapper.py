@@ -15,6 +15,12 @@ from app.bot_transport.runtime_wrapper import (
     handle_slice1_telegram_update_to_runtime_action,
 )
 from app.shared.correlation import is_valid_correlation_id, new_correlation_id
+from tests.slice1_expected_user_copy import (
+    IDENTITY_READY_TEXT,
+    INACTIVE_OR_NOT_ELIGIBLE_TEXT,
+    NEEDS_ONBOARDING_TEXT,
+    SLICE1_HELP_TEXT,
+)
 
 
 def _run(coro):
@@ -49,7 +55,7 @@ def test_runtime_wrapper_private_start_send_message() -> None:
         action = await handle_slice1_telegram_update_to_runtime_action(raw, c, correlation_id=cid)
         assert action.kind is TelegramRuntimeActionKind.SEND_MESSAGE
         assert action.chat_id == 42
-        assert action.message_text == "Identity is ready. You can continue in this chat."
+        assert action.message_text == IDENTITY_READY_TEXT
         assert action.action_keys == ()
         assert action.correlation_id == cid
 
@@ -85,7 +91,7 @@ def test_runtime_wrapper_private_status_unknown_user_send_onboarding() -> None:
         action = await handle_slice1_telegram_update_to_runtime_action(raw, c, correlation_id=cid)
         assert action.kind is TelegramRuntimeActionKind.SEND_MESSAGE
         assert action.chat_id == 999
-        assert action.message_text == "Continue with the suggested action to use this bot."
+        assert action.message_text == NEEDS_ONBOARDING_TEXT
         assert action.action_keys == ("complete_bootstrap",)
         assert action.correlation_id == cid
 
@@ -109,8 +115,29 @@ def test_runtime_wrapper_private_status_after_bootstrap_no_snapshot_inactive_sen
         )
         assert action.kind is TelegramRuntimeActionKind.SEND_MESSAGE
         assert action.chat_id == uid
-        assert action.message_text == "No access is available for this account right now."
+        assert action.message_text == INACTIVE_OR_NOT_ELIGIBLE_TEXT
         assert action.correlation_id == cid
+
+    _run(main())
+
+
+def test_runtime_wrapper_private_help_send_message_no_uc01_ledger() -> None:
+    """read-only /help: one send, no UC-01 idempotency key, no delivery ledger handoff."""
+
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        raw = _update(
+            update_id=50,
+            message=_base_message(user_id=33, text="/help"),
+        )
+        action = await handle_slice1_telegram_update_to_runtime_action(raw, c, correlation_id=cid)
+        assert action.kind is TelegramRuntimeActionKind.SEND_MESSAGE
+        assert action.message_text == SLICE1_HELP_TEXT
+        assert action.action_keys == ()
+        assert action.uc01_idempotency_key is None
+        assert action.chat_id == 33
+        assert len(await c.audit.recorded_events()) == 0
 
     _run(main())
 
