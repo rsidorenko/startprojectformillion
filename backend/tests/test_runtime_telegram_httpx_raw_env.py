@@ -148,7 +148,7 @@ def test_run_iterations_one_start_one_send() -> None:
             return httpx.Response(200, json={"ok": True, "result": [_start_update()]})
         if request.url.path.endswith("/sendMessage"):
             send_posts += 1
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     cfg = _minimal_runtime_config()

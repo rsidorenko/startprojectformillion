@@ -126,7 +126,7 @@ def test_custom_config_reaches_inner_bundle_and_limits_fetch() -> None:
             lim = int(_json_body(request)["limit"])
             return httpx.Response(200, json={"ok": True, "result": pool[:lim]})
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     cfg = PollingRuntimeConfig(max_updates_per_batch=2)
@@ -166,7 +166,7 @@ def test_one_poll_start_yields_one_send() -> None:
             return httpx.Response(200, json={"ok": True, "result": [raw]})
         if request.url.path.endswith("/sendMessage"):
             sends.append(request)
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:
@@ -187,7 +187,7 @@ def test_two_polls_same_update_id_replay_second_noop_one_audit() -> None:
         if request.url.path.endswith("/getUpdates"):
             return httpx.Response(200, json={"ok": True, "result": [raw]})
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:

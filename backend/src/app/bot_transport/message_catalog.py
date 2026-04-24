@@ -15,6 +15,7 @@ class RenderedMessagePackage:
     action_keys: tuple[str, ...]
     correlation_id: str
     replay_suppresses_outbound: bool = False
+    uc01_idempotency_key: str | None = None
 
 
 def _text_service_unavailable() -> str:
@@ -62,10 +63,12 @@ def render_telegram_outbound_plan(plan: TelegramOutboundPlan) -> RenderedMessage
             action_keys=(),
             correlation_id=plan.correlation_id,
             replay_suppresses_outbound=plan.replay_suppresses_outbound,
+            uc01_idempotency_key=plan.uc01_idempotency_key,
         )
     return RenderedMessagePackage(
         message_text=_CATALOG_TEXT[key],
         action_keys=_action_keys_from_plan(plan),
         correlation_id=plan.correlation_id,
         replay_suppresses_outbound=plan.replay_suppresses_outbound,
+        uc01_idempotency_key=plan.uc01_idempotency_key,
     )

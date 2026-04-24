@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 from app.security.errors import InternalErrorCategory
 from app.shared.types import OperationOutcomeCategory
@@ -77,4 +77,31 @@ class SubscriptionSnapshotWriter(Protocol):
 
 class AuditAppender(Protocol):
     async def append(self, event: AuditEvent) -> None:
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class OutboundDeliveryRecord:
+    """UC-01 Telegram delivery state keyed by the same idempotency key as bootstrap (no message body)."""
+
+    status: Literal["pending", "sent"]
+    telegram_message_id: int | None
+
+
+class OutboundDeliveryLedger(Protocol):
+    """Outbound send durability for UC-01 identity_ready (pending until Telegram confirms message_id)."""
+
+    async def ensure_pending(self, idempotency_key: str) -> None:
+        """Create a pending row if none exists; never downgrade ``sent``."""
+
+        ...
+
+    async def get_status(self, idempotency_key: str) -> OutboundDeliveryRecord | None:
+        """Return current row or ``None`` if the ledger has no record for the key."""
+
+        ...
+
+    async def mark_sent(self, idempotency_key: str, telegram_message_id: int) -> None:
+        """Idempotently mark ``pending`` as ``sent`` with a Telegram ``message_id``."""
+
         ...

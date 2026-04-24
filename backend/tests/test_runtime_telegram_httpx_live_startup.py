@@ -58,7 +58,7 @@ def _mock_transport_start_ok() -> httpx.MockTransport:
         if request.url.path.endswith("/getUpdates"):
             return httpx.Response(200, json={"ok": True, "result": [_start_update()]})
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     return httpx.MockTransport(handler)
@@ -218,7 +218,7 @@ def test_one_iteration_start_one_send() -> None:
             return httpx.Response(200, json={"ok": True, "result": [_start_update()]})
         if request.url.path.endswith("/sendMessage"):
             send_posts += 1
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:
@@ -248,7 +248,7 @@ def test_two_iterations_same_start_replay_second_noop_one_audit() -> None:
             send_posts += 1
             body = _json_body(request)
             assert body.get("chat_id") == 42
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:

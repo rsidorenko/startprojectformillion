@@ -98,10 +98,11 @@ class FakeTelegramRawPollingClient:
         text: str,
         *,
         correlation_id: str,
-    ) -> None:
+    ) -> int:
         if self.send_fail:
             raise RuntimeError("send failed")
         self.send_calls.append((chat_id, text, correlation_id))
+        return 1
 
 
 def test_one_raw_start_fetch_bridge_send_count_one() -> None:
@@ -173,8 +174,8 @@ def test_mixed_batch_accepted_rejected_bridge_exception() -> None:
             async def fetch_raw_updates(self, *, limit: int, offset: int | None = None):
                 return await fetch_raw_updates(limit=limit, offset=offset)
 
-            async def send_text_message(self, chat_id: int, text: str, *, correlation_id: str) -> None:
-                await client.send_text_message(chat_id, text, correlation_id=correlation_id)
+            async def send_text_message(self, chat_id: int, text: str, *, correlation_id: str) -> int:
+                return await client.send_text_message(chat_id, text, correlation_id=correlation_id)
 
         rt = Slice1RawPollingRuntime(c, C(), bridge)
         r = await rt.poll_once()

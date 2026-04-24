@@ -50,6 +50,8 @@ class TransportSafeResponse:
     next_action_hint: str | None = None
     #: UC-01 only: same Telegram update replay handled idempotently; runtime may skip duplicate send.
     replay_suppresses_outbound: bool = False
+    #: UC-01 success only: digest key aligned with ``idempotency_records`` for outbound delivery ledger.
+    uc01_idempotency_key: str | None = None
 
 
 def _error_code_from_user_safe(code: UserSafeErrorCode | None) -> str:
@@ -75,6 +77,7 @@ def _transport_error(
         correlation_id=correlation_id,
         next_action_hint=None,
         replay_suppresses_outbound=False,
+        uc01_idempotency_key=None,
     )
 
 
@@ -96,6 +99,7 @@ def map_bootstrap_identity_to_transport(result: BootstrapIdentityResult) -> Tran
             correlation_id=cid,
             next_action_hint=None,
             replay_suppresses_outbound=result.idempotent_replay,
+            uc01_idempotency_key=result.uc01_idempotency_key,
         )
     return _transport_error(TransportResponseCategory.ERROR, result.user_safe, cid)
 
@@ -114,6 +118,7 @@ def map_get_subscription_status_to_transport(
             correlation_id=cid,
             next_action_hint=None,
             replay_suppresses_outbound=False,
+            uc01_idempotency_key=None,
         )
 
     if oc is OperationOutcomeCategory.NOT_FOUND:
@@ -123,6 +128,7 @@ def map_get_subscription_status_to_transport(
             correlation_id=cid,
             next_action_hint=TransportNextActionHint.COMPLETE_BOOTSTRAP.value,
             replay_suppresses_outbound=False,
+            uc01_idempotency_key=None,
         )
 
     return _transport_error(TransportResponseCategory.ERROR, result.user_safe, cid)

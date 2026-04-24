@@ -184,7 +184,7 @@ def test_runtime_action_shape_no_raw_payload_or_internal_enums() -> None:
         action = await handle_slice1_telegram_update_to_runtime_action(raw, c, correlation_id=cid)
         assert isinstance(action, TelegramRuntimeAction)
         assert isinstance(action.kind, TelegramRuntimeActionKind)
-        for name in ("chat_id", "message_text", "correlation_id", "action_keys", "kind"):
+        for name in ("chat_id", "message_text", "correlation_id", "action_keys", "kind", "uc01_idempotency_key"):
             assert hasattr(action, name)
         assert not any(isinstance(getattr(action, n), dict) for n in action.__slots__)
         assert TransportResponseCategory not in type(action).__mro__

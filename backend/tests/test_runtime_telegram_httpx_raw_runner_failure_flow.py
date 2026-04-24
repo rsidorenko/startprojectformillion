@@ -171,7 +171,7 @@ def test_httpx_raw_iterations_getupdates_fails_no_send_empty_audit(fetch_fail_mo
             return _fetch_fail_response(fetch_fail_mode)
         if request.url.path.endswith("/sendMessage"):
             send_hits.append(None)
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     captured: list = []
@@ -239,7 +239,7 @@ def test_httpx_raw_iterations_success_then_fetch_fail_second_getupdates_uses_off
                 return httpx.Response(200, json={"ok": True, "result": [u]})
             return _fetch_fail_response(fetch_fail_mode)
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:

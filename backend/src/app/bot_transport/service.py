@@ -25,6 +25,7 @@ def _adapter_reject_to_transport_safe(rejected: TelegramAdapterRejected) -> Tran
         code=TransportErrorCode.INVALID_INPUT.value,
         correlation_id=rejected.correlation_id,
         next_action_hint=None,
+        uc01_idempotency_key=None,
     )
 
 

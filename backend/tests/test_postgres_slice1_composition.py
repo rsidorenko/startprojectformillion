@@ -17,6 +17,7 @@ from app.bot_transport.presentation import TransportResponseCategory, TransportS
 from app.persistence.postgres_audit import PostgresAuditAppender
 from app.persistence.postgres_idempotency import PostgresIdempotencyRepository
 from app.persistence.postgres_migrations import apply_postgres_migrations
+from app.persistence.postgres_outbound_delivery import PostgresOutboundDeliveryLedger
 from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
 from app.persistence.postgres_user_identity import PostgresUserIdentityRepository, internal_user_id_for_telegram
 from app.security.idempotency import build_bootstrap_idempotency_key
@@ -64,6 +65,10 @@ async def _cleanup_test_rows(
     for cid in correlation_ids:
         await conn.execute("DELETE FROM slice1_audit_events WHERE correlation_id = $1::text", cid)
     await conn.execute("DELETE FROM idempotency_records WHERE idempotency_key = $1::text", idempotency_key)
+    await conn.execute(
+        "DELETE FROM slice1_uc01_outbound_deliveries WHERE idempotency_key = $1::text",
+        idempotency_key,
+    )
     await conn.execute("DELETE FROM subscription_snapshots WHERE internal_user_id = $1::text", internal)
     await conn.execute("DELETE FROM user_identities WHERE telegram_user_id = $1::bigint", telegram_user_id)
 
@@ -83,6 +88,7 @@ def test_postgres_slice1_composition_bootstrap_status_audit_idempotent_replay(pg
                 idempotency=PostgresIdempotencyRepository(pool),
                 snapshots=PostgresSubscriptionSnapshotReader(pool),
                 audit=PostgresAuditAppender(pool),
+                outbound_delivery=PostgresOutboundDeliveryLedger(pool),
             )
 
             r1 = await composition.bootstrap.handle(
@@ -199,6 +205,7 @@ def test_postgres_uc02_dispatch_status_transport_and_missing_snapshot_fail_close
                 idempotency=PostgresIdempotencyRepository(pool),
                 snapshots=PostgresSubscriptionSnapshotReader(pool),
                 audit=PostgresAuditAppender(pool),
+                outbound_delivery=PostgresOutboundDeliveryLedger(pool),
             )
 
             r_boot = await composition.bootstrap.handle(

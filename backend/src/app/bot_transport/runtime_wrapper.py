@@ -33,6 +33,7 @@ class TelegramRuntimeAction:
     chat_id: int | None
     message_text: str | None
     action_keys: tuple[str, ...]
+    uc01_idempotency_key: str | None = None
 
 
 def extract_eligible_private_chat_id_from_telegram_like_update(
@@ -89,14 +90,37 @@ async def handle_slice1_telegram_update_to_runtime_action(
     )
     cid = rendered.correlation_id
     target = extract_eligible_private_chat_id_from_telegram_like_update(update)
+    idem_key = rendered.uc01_idempotency_key
+    ledger = composition.outbound_delivery
     if rendered.replay_suppresses_outbound:
-        return TelegramRuntimeAction(
-            kind=TelegramRuntimeActionKind.NOOP,
-            correlation_id=cid,
-            chat_id=None,
-            message_text=None,
-            action_keys=(),
-        )
+        if not idem_key or ledger is None:
+            return TelegramRuntimeAction(
+                kind=TelegramRuntimeActionKind.NOOP,
+                correlation_id=cid,
+                chat_id=None,
+                message_text=None,
+                action_keys=(),
+                uc01_idempotency_key=None,
+            )
+        rec = await ledger.get_status(idem_key)
+        if rec is not None and rec.status == "sent" and rec.telegram_message_id is not None:
+            return TelegramRuntimeAction(
+                kind=TelegramRuntimeActionKind.NOOP,
+                correlation_id=cid,
+                chat_id=None,
+                message_text=None,
+                action_keys=(),
+                uc01_idempotency_key=None,
+            )
+        if rec is None or rec.status != "pending":
+            return TelegramRuntimeAction(
+                kind=TelegramRuntimeActionKind.NOOP,
+                correlation_id=cid,
+                chat_id=None,
+                message_text=None,
+                action_keys=(),
+                uc01_idempotency_key=None,
+            )
     if target is None or not rendered.message_text.strip():
         return TelegramRuntimeAction(
             kind=TelegramRuntimeActionKind.NOOP,
@@ -104,6 +128,7 @@ async def handle_slice1_telegram_update_to_runtime_action(
             chat_id=None,
             message_text=None,
             action_keys=(),
+            uc01_idempotency_key=None,
         )
     return TelegramRuntimeAction(
         kind=TelegramRuntimeActionKind.SEND_MESSAGE,
@@ -111,6 +136,7 @@ async def handle_slice1_telegram_update_to_runtime_action(
         chat_id=target,
         message_text=rendered.message_text,
         action_keys=rendered.action_keys,
+        uc01_idempotency_key=idem_key,
     )
 
 

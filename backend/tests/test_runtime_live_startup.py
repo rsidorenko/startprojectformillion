@@ -66,8 +66,9 @@ class FakeRawClient:
         text: str,
         *,
         correlation_id: str,
-    ) -> None:
+    ) -> int:
         self.send_calls.append((chat_id, text, correlation_id))
+        return 1
 
 
 def test_bundle_builds_with_fake_client_and_bridge() -> None:

@@ -43,6 +43,7 @@ def test_sorted_migration_sql_paths_repo_migrations_order() -> None:
         "003_subscription_snapshots.sql",
         "004_slice1_audit_events.sql",
         "005_retention_timestamps.sql",
+        "006_slice1_uc01_outbound_deliveries.sql",
     ]
 
 

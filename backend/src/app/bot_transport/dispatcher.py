@@ -26,6 +26,7 @@ def _normalization_reject_response(envelope: TransportIncomingEnvelope) -> Trans
         code=TransportErrorCode.INVALID_INPUT.value,
         correlation_id=envelope.correlation_id,
         next_action_hint=None,
+        uc01_idempotency_key=None,
     )
 
 

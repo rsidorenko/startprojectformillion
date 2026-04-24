@@ -50,6 +50,8 @@ class BootstrapIdentityResult:
     internal_user_id: str | None
     user_safe: UserSafeErrorCode | None
     idempotent_replay: bool
+    #: UC-01 bootstrap only: same digest as ``idempotency_records.idempotency_key`` (success paths).
+    uc01_idempotency_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +165,7 @@ class BootstrapIdentityHandler:
                 internal_user_id=identity.internal_user_id,
                 user_safe=None,
                 idempotent_replay=True,
+                uc01_idempotency_key=idem_key,
             )
 
         try:
@@ -226,6 +229,7 @@ class BootstrapIdentityHandler:
             internal_user_id=identity.internal_user_id,
             user_safe=None,
             idempotent_replay=False,
+            uc01_idempotency_key=idem_key,
         )
 
     async def _put_default_snapshot_if_absent(

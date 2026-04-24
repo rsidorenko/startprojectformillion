@@ -9,12 +9,14 @@ import pytest
 from app.persistence.in_memory import (
     InMemoryAuditAppender,
     InMemoryIdempotencyRepository,
+    InMemoryOutboundDeliveryLedger,
     InMemorySubscriptionSnapshotReader,
     InMemoryUserIdentityRepository,
 )
 from app.persistence.postgres_audit import PostgresAuditAppender
 from app.persistence.postgres_idempotency import PostgresIdempotencyRepository
 from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
+from app.persistence.postgres_outbound_delivery import PostgresOutboundDeliveryLedger
 from app.persistence.postgres_user_identity import PostgresUserIdentityRepository
 from app.persistence.slice1_postgres_wiring import (
     resolve_slice1_composition_for_runtime,
@@ -74,6 +76,7 @@ def test_resolve_without_flag_uses_in_memory(monkeypatch: pytest.MonkeyPatch) ->
         assert isinstance(composition.idempotency, InMemoryIdempotencyRepository)
         assert isinstance(composition.snapshots, InMemorySubscriptionSnapshotReader)
         assert isinstance(composition.audit, InMemoryAuditAppender)
+        assert isinstance(composition.outbound_delivery, InMemoryOutboundDeliveryLedger)
 
     asyncio.run(main())
 
@@ -94,6 +97,7 @@ def test_resolve_with_flag_and_pool_uses_postgres_repos(monkeypatch: pytest.Monk
         assert isinstance(composition.idempotency, PostgresIdempotencyRepository)
         assert isinstance(composition.snapshots, PostgresSubscriptionSnapshotReader)
         assert isinstance(composition.audit, PostgresAuditAppender)
+        assert isinstance(composition.outbound_delivery, PostgresOutboundDeliveryLedger)
 
     asyncio.run(main())
 

@@ -115,7 +115,7 @@ def test_second_getupdates_uses_max_update_id_plus_one(use_process: bool) -> Non
                 return httpx.Response(200, json={"ok": True, "result": [u]})
             return httpx.Response(200, json={"ok": True, "result": []})
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:
@@ -155,7 +155,7 @@ def test_no_valid_update_id_offset_not_advanced(use_process: bool) -> None:
                 json={"ok": True, "result": [_update(update_id=9, message=_base_message(text="/start"))]},
             )
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:
@@ -189,7 +189,7 @@ def test_getupdates_http_error_does_not_change_offset(use_process: bool) -> None
                 return httpx.Response(200, json={"ok": True, "result": [u]})
             return httpx.Response(500, json={"ok": False})
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:

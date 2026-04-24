@@ -44,8 +44,11 @@ class TelegramPollingClient(Protocol):
         text: str,
         *,
         correlation_id: str,
-    ) -> None:
-        """Send one outbound text message; failures are reported via exceptions."""
+    ) -> int:
+        """Send one outbound text message; failures are reported via exceptions.
+
+        Returns Telegram ``message_id`` from a successful Bot API ``sendMessage`` response.
+        """
         ...
 
 
@@ -90,8 +93,11 @@ class Slice1PollingRuntime:
             if action.kind is TelegramRuntimeActionKind.NOOP:
                 noop += 1
                 continue
+            idem_key = action.uc01_idempotency_key
             try:
-                await self._client.send_text_message(
+                if idem_key is not None:
+                    await self._composition.outbound_delivery.ensure_pending(idem_key)
+                msg_id = await self._client.send_text_message(
                     action.chat_id,
                     action.message_text or "",
                     correlation_id=action.correlation_id,
@@ -99,6 +105,8 @@ class Slice1PollingRuntime:
             except Exception:
                 send_fail += 1
                 continue
+            if idem_key is not None:
+                await self._composition.outbound_delivery.mark_sent(idem_key, msg_id)
             send_ok += 1
         return PollingBatchResult(
             received_count=received,

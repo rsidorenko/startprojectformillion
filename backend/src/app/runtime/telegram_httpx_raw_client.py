@@ -125,7 +125,7 @@ class HttpxTelegramRawPollingClient:
         text: str,
         *,
         correlation_id: str,
-    ) -> None:
+    ) -> int:
         td = self._polling_policy.timeout.timeout_for_request(ORDINARY_OUTBOUND_REQUEST)
         post_kw = _httpx_post_timeout_kwargs(td)
         _ = correlation_id
@@ -134,3 +134,10 @@ class HttpxTelegramRawPollingClient:
         response.raise_for_status()
         data = _parse_json_object(response)
         _raise_if_not_ok(data)
+        result = data.get("result")
+        if not isinstance(result, dict):
+            raise RuntimeError("telegram API sendMessage result is not an object")
+        mid = result.get("message_id")
+        if type(mid) is not int:
+            raise RuntimeError("telegram API sendMessage result missing message_id")
+        return mid

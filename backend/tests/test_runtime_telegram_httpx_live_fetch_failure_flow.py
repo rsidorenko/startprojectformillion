@@ -128,7 +128,7 @@ def test_live_offset_not_rolled_back_after_success_then_fetch_failure(fetch_fail
                 return httpx.Response(200, json={"ok": True, "result": [u]})
             return _fetch_fail_response(fetch_fail_mode)
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:

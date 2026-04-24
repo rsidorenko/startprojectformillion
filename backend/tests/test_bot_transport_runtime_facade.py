@@ -11,6 +11,7 @@ from app.bot_transport.runtime_facade import (
     Slice1TelegramRuntimeFacade,
     handle_slice1_telegram_update_to_rendered_message,
 )
+from app.security.idempotency import build_bootstrap_idempotency_key
 from app.shared.correlation import is_valid_correlation_id, new_correlation_id
 
 
@@ -48,6 +49,7 @@ def test_facade_raw_private_start_returns_identity_ready_rendered() -> None:
         assert pkg.message_text == "Identity is ready. You can continue in this chat."
         assert pkg.action_keys == ()
         assert pkg.correlation_id == cid
+        assert pkg.uc01_idempotency_key == build_bootstrap_idempotency_key(42, 1)
 
     _run(main())
 
@@ -63,6 +65,7 @@ def test_facade_duplicate_raw_start_replay_flag_second_call_one_audit() -> None:
         assert p1.replay_suppresses_outbound is False
         assert p2.replay_suppresses_outbound is True
         assert p1.correlation_id == p2.correlation_id == cid
+        assert p1.uc01_idempotency_key == p2.uc01_idempotency_key == build_bootstrap_idempotency_key(42, 5)
         assert len(await c.audit.recorded_events()) == 1
 
     _run(main())
@@ -77,6 +80,7 @@ def test_facade_raw_status_unknown_user_onboarding_guidance_rendered() -> None:
         assert pkg.message_text == "Continue with the suggested action to use this bot."
         assert pkg.action_keys == ("complete_bootstrap",)
         assert pkg.correlation_id == cid
+        assert pkg.uc01_idempotency_key is None
 
     _run(main())
 

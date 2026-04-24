@@ -10,6 +10,7 @@ from app.application.handlers import BootstrapIdentityHandler, GetSubscriptionSt
 from app.application.interfaces import (
     AuditAppender,
     IdempotencyRepository,
+    OutboundDeliveryLedger,
     SubscriptionSnapshot,
     SubscriptionSnapshotReader,
     SubscriptionSnapshotWriter,
@@ -18,6 +19,7 @@ from app.application.interfaces import (
 from app.persistence.in_memory import (
     InMemoryAuditAppender,
     InMemoryIdempotencyRepository,
+    InMemoryOutboundDeliveryLedger,
     InMemorySubscriptionSnapshotReader,
     InMemoryUserIdentityRepository,
 )
@@ -33,6 +35,7 @@ class Slice1Composition:
     idempotency: IdempotencyRepository
     audit: AuditAppender
     snapshots: SubscriptionSnapshotReader
+    outbound_delivery: OutboundDeliveryLedger
 
 
 def build_slice1_composition(
@@ -42,6 +45,7 @@ def build_slice1_composition(
     idempotency: IdempotencyRepository | None = None,
     snapshots: SubscriptionSnapshotReader | None = None,
     audit: AuditAppender | None = None,
+    outbound_delivery: OutboundDeliveryLedger | None = None,
 ) -> Slice1Composition:
     if (identity is None) ^ (idempotency is None):
         raise ValueError("identity and idempotency must both be provided or both omitted")
@@ -59,6 +63,7 @@ def build_slice1_composition(
     if snapshots is None:
         snapshots = InMemorySubscriptionSnapshotReader(initial_snapshots)
     snapshot_writer = cast(SubscriptionSnapshotWriter, snapshots)
+    delivery = outbound_delivery or InMemoryOutboundDeliveryLedger()
     return Slice1Composition(
         bootstrap=BootstrapIdentityHandler(identity, idempotency, audit, snapshot_writer),
         get_status=GetSubscriptionStatusHandler(identity, snapshots),
@@ -66,4 +71,5 @@ def build_slice1_composition(
         idempotency=idempotency,
         audit=audit,
         snapshots=snapshots,
+        outbound_delivery=delivery,
     )

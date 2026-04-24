@@ -121,7 +121,7 @@ def test_run_iterations_one_start_send_count_one() -> None:
         if request.url.path.endswith("/getUpdates"):
             return httpx.Response(200, json={"ok": True, "result": [raw]})
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:
@@ -153,7 +153,7 @@ def test_same_app_twice_same_update_replay_second_noop_one_audit() -> None:
         if request.url.path.endswith("/getUpdates"):
             return httpx.Response(200, json={"ok": True, "result": [raw]})
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:

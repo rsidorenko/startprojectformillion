@@ -53,8 +53,8 @@ class FakeTelegramPollingClient:
         text: str,
         *,
         correlation_id: str,
-    ) -> None:
-        pass
+    ) -> int:
+        return 1
 
 
 def _raw_batch(**overrides: int) -> RawPollingBatchResult:

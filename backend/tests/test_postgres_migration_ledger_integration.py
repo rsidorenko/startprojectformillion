@@ -17,6 +17,7 @@ _EXPECTED_LEDGER_FILENAMES = (
     "003_subscription_snapshots.sql",
     "004_slice1_audit_events.sql",
     "005_retention_timestamps.sql",
+    "006_slice1_uc01_outbound_deliveries.sql",
 )
 
 _SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")

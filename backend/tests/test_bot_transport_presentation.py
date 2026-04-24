@@ -36,6 +36,7 @@ def test_bootstrap_success_maps_to_identity_ready() -> None:
         correlation_id=cid,
         next_action_hint=None,
         replay_suppresses_outbound=False,
+        uc01_idempotency_key=None,
     )
     assert r.replay_suppresses_outbound is False
 
@@ -135,6 +136,7 @@ def test_transport_response_has_no_outcome_or_internal_fields() -> None:
         "correlation_id",
         "next_action_hint",
         "replay_suppresses_outbound",
+        "uc01_idempotency_key",
     }
 
 

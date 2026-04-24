@@ -10,6 +10,7 @@ import asyncpg
 from app.application.bootstrap import Slice1Composition, build_slice1_composition
 from app.persistence.postgres_audit import PostgresAuditAppender
 from app.persistence.postgres_idempotency import PostgresIdempotencyRepository
+from app.persistence.postgres_outbound_delivery import PostgresOutboundDeliveryLedger
 from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
 from app.persistence.postgres_user_identity import PostgresUserIdentityRepository
 from app.security.config import ConfigurationError, RuntimeConfig
@@ -52,5 +53,6 @@ async def resolve_slice1_composition_for_runtime(
         idempotency=PostgresIdempotencyRepository(pool),
         snapshots=PostgresSubscriptionSnapshotReader(pool),
         audit=PostgresAuditAppender(pool),
+        outbound_delivery=PostgresOutboundDeliveryLedger(pool),
     )
     return composition, pool

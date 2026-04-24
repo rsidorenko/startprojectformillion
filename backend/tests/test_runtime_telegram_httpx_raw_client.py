@@ -109,7 +109,7 @@ def test_timeout_policy_lookup_request_kinds_and_happy_path_bodies_unchanged() -
         captured.append(request)
         if request.url.path.endswith("/getUpdates"):
             return httpx.Response(200, json={"ok": True, "result": []})
-        return httpx.Response(200, json={"ok": True, "result": {}})
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
 
     async def main() -> None:
         transport = httpx.MockTransport(handler)
@@ -142,6 +142,8 @@ def test_inherit_timeout_mode_post_has_no_per_request_timeout_kwarg() -> None:
     post_kwargs: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/sendMessage"):
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(200, json={"ok": True, "result": []})
 
     async def main() -> None:
@@ -314,7 +316,7 @@ def test_custom_base_url_without_trailing_slash_normalizes_paths() -> None:
         paths.append(request.url.path)
         if request.url.path.endswith("/getUpdates"):
             return httpx.Response(200, json={"ok": True, "result": []})
-        return httpx.Response(200, json={"ok": True, "result": {}})
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
 
     async def main() -> None:
         transport = httpx.MockTransport(handler)
@@ -372,7 +374,7 @@ def test_send_text_message_calls_sendmessage_minimal_body() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests_log.append(request)
-        return httpx.Response(200, json={"ok": True, "result": {}})
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
 
     async def main() -> None:
         transport = httpx.MockTransport(handler)
@@ -393,7 +395,7 @@ def test_correlation_id_not_in_outbound_request() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal raw_content
         raw_content = request.content
-        return httpx.Response(200, json={"ok": True, "result": {}})
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
 
     async def main() -> None:
         transport = httpx.MockTransport(handler)

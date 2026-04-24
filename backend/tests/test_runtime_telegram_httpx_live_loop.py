@@ -307,7 +307,7 @@ def test_one_start_max_iterations_one_send_count() -> None:
         if request.url.path.endswith("/getUpdates"):
             return httpx.Response(200, json={"ok": True, "result": [_start_update()]})
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:

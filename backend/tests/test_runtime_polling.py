@@ -7,6 +7,7 @@ import inspect
 
 from app.application.bootstrap import build_slice1_composition
 from app.bot_transport import handle_slice1_telegram_update_to_runtime_action as public_handle_slice1
+from app.security.idempotency import build_bootstrap_idempotency_key
 from app.shared.correlation import new_correlation_id
 from app.runtime.polling import (
     PollingBatchResult,
@@ -63,10 +64,11 @@ class FakeTelegramPollingClient:
         text: str,
         *,
         correlation_id: str,
-    ) -> None:
+    ) -> int:
         if self.send_fail:
             raise RuntimeError("send failed")
         self.send_calls.append((chat_id, text, correlation_id))
+        return 1
 
 
 def test_polling_batch_one_start_one_send() -> None:
@@ -323,5 +325,40 @@ def test_poll_once_delegates_to_process_batch(monkeypatch) -> None:
         cid = new_correlation_id()
         await rt.poll_once(correlation_id=cid)
         assert delegated == [(1, cid)]
+
+    _run(main())
+
+
+def test_start_send_failure_then_replay_sends_once_and_marks_sent() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        client = FakeTelegramPollingClient()
+        cid = new_correlation_id()
+        rt = Slice1PollingRuntime(c, client)
+        raw = _update(update_id=9, message=_base_message(user_id=42, text="/start"))
+        client.send_fail = True
+        r1 = await rt.process_batch([raw], correlation_id=cid)
+        assert r1.send_count == 0 and r1.send_failure_count == 1
+        key = build_bootstrap_idempotency_key(42, 9)
+        rec1 = await c.outbound_delivery.get_status(key)
+        assert rec1 is not None and rec1.status == "pending"
+        client.send_fail = False
+        r2 = await rt.process_batch([raw], correlation_id=cid)
+        assert r2.send_count == 1 and r2.send_failure_count == 0
+        rec2 = await c.outbound_delivery.get_status(key)
+        assert rec2 is not None and rec2.status == "sent" and rec2.telegram_message_id == 1
+
+    _run(main())
+
+
+def test_status_path_unchanged_with_ledger() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        client = FakeTelegramPollingClient()
+        rt = Slice1PollingRuntime(c, client)
+        raw = _update(update_id=20, message=_base_message(user_id=500, text="/status"))
+        r = await rt.process_batch([raw], correlation_id=new_correlation_id())
+        assert r.send_count == 1
+        assert "Continue with the suggested action" in client.send_calls[0][1]
 
     _run(main())

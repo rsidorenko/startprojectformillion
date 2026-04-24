@@ -57,10 +57,11 @@ class FakeTelegramPollingClient:
         text: str,
         *,
         correlation_id: str,
-    ) -> None:
+    ) -> int:
         if self.send_fail:
             raise RuntimeError("send failed")
         self.send_calls.append((chat_id, text, correlation_id))
+        return 1
 
 
 def test_two_valid_raw_updates_identity_bridge_aggregates_counters() -> None:

@@ -47,7 +47,7 @@ class TelegramRawPollingClient(Protocol):
         text: str,
         *,
         correlation_id: str,
-    ) -> None:
+    ) -> int:
         ...
 
 
@@ -78,8 +78,8 @@ class _PollingClientFromRaw:
         text: str,
         *,
         correlation_id: str,
-    ) -> None:
-        await self._raw.send_text_message(chat_id, text, correlation_id=correlation_id)
+    ) -> int:
+        return await self._raw.send_text_message(chat_id, text, correlation_id=correlation_id)
 
 
 class Slice1RawPollingRuntime:

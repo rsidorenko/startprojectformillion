@@ -112,7 +112,7 @@ def test_from_env_getupdates_fails_counters_no_send_no_audit(fetch_fail_mode: st
             return _fetch_fail_response(fetch_fail_mode)
         if request.url.path.endswith("/sendMessage"):
             send_hits.append(None)
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     cfg = _minimal_runtime_config()
@@ -156,7 +156,7 @@ def test_from_env_first_success_advances_offset_second_fetch_fails_offset_preser
                 return httpx.Response(200, json={"ok": True, "result": [u]})
             return _fetch_fail_response(fetch_fail_mode)
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     cfg = _minimal_runtime_config()

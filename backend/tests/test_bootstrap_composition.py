@@ -126,7 +126,15 @@ def test_composition_has_no_extra_service_surface() -> None:
     allowed = _allowed_composition_attrs()
     assert {f.name for f in fields(c)} == allowed
     assert allowed == frozenset(
-        {"bootstrap", "get_status", "identity", "idempotency", "audit", "snapshots"},
+        {
+            "bootstrap",
+            "get_status",
+            "identity",
+            "idempotency",
+            "audit",
+            "snapshots",
+            "outbound_delivery",
+        },
     )
     for name in allowed:
         assert "billing" not in name

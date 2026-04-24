@@ -58,6 +58,10 @@ async def _cleanup_test_rows(
 ) -> None:
     internal = internal_user_id_for_telegram(telegram_user_id)
     await conn.execute("DELETE FROM slice1_audit_events WHERE correlation_id = $1::text", correlation_id)
+    await conn.execute(
+        "DELETE FROM slice1_uc01_outbound_deliveries WHERE idempotency_key = $1::text",
+        idempotency_key,
+    )
     await conn.execute("DELETE FROM idempotency_records WHERE idempotency_key = $1::text", idempotency_key)
     await conn.execute("DELETE FROM subscription_snapshots WHERE internal_user_id = $1::text", internal)
     await conn.execute("DELETE FROM user_identities WHERE telegram_user_id = $1::bigint", telegram_user_id)

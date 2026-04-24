@@ -59,6 +59,7 @@ class TelegramOutboundPlan:
     keyboard_marker: str
     correlation_id: str
     replay_suppresses_outbound: bool = False
+    uc01_idempotency_key: str | None = None
 
 
 def _error_plan(
@@ -72,6 +73,7 @@ def _error_plan(
         keyboard_marker=OutboundKeyboardMarker.NONE.value,
         correlation_id=correlation_id,
         replay_suppresses_outbound=False,
+        uc01_idempotency_key=None,
     )
 
 
@@ -100,6 +102,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,
                 replay_suppresses_outbound=transport.replay_suppresses_outbound,
+                uc01_idempotency_key=transport.uc01_idempotency_key,
             )
         if code == TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value:
             return TelegramOutboundPlan(
@@ -108,6 +111,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 next_action_key=None,
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,
+                uc01_idempotency_key=None,
             )
         if code == TransportStatusCode.NEEDS_REVIEW.value:
             return TelegramOutboundPlan(
@@ -116,6 +120,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 next_action_key=None,
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,
+                uc01_idempotency_key=None,
             )
         return _service_unavailable_plan(cid)
 
@@ -132,6 +137,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 next_action_key=next_key,
                 keyboard_marker=marker,
                 correlation_id=cid,
+                uc01_idempotency_key=None,
             )
         return _service_unavailable_plan(cid)
 

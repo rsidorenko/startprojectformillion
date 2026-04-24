@@ -217,7 +217,7 @@ def test_one_iteration_start_yields_send_count_one() -> None:
         if request.url.path.endswith("/getUpdates"):
             return httpx.Response(200, json={"ok": True, "result": [raw]})
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     async def main() -> None:
@@ -243,7 +243,7 @@ def test_two_helper_runs_same_update_id_one_audit_each_fresh_bundle() -> None:
         if request.url.path.endswith("/getUpdates"):
             return httpx.Response(200, json={"ok": True, "result": [raw]})
         if request.url.path.endswith("/sendMessage"):
-            return httpx.Response(200, json={"ok": True, "result": {}})
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
         return httpx.Response(404)
 
     orig_build = httpx_raw_runner_mod.build_slice1_httpx_raw_runtime_bundle

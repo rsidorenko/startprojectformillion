@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from typing import Literal, cast
 
 from app.application.interfaces import (
     AuditEvent,
     IdempotencyRecord,
     IdentityRecord,
+    OutboundDeliveryRecord,
     SubscriptionSnapshot,
 )
 
@@ -125,3 +127,38 @@ class InMemoryAuditAppender:
     async def recorded_events(self) -> tuple[AuditEvent, ...]:
         async with self._lock:
             return tuple(self._events)
+
+
+class InMemoryOutboundDeliveryLedger:
+    """UC-01 delivery rows keyed by bootstrap idempotency digest (tests + default composition)."""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._status: dict[str, str] = {}
+        self._message_id: dict[str, int] = {}
+
+    async def ensure_pending(self, idempotency_key: str) -> None:
+        async with self._lock:
+            if self._status.get(idempotency_key) == "sent":
+                return
+            self._status[idempotency_key] = "pending"
+
+    async def get_status(self, idempotency_key: str) -> OutboundDeliveryRecord | None:
+        async with self._lock:
+            st = self._status.get(idempotency_key)
+            if st is None:
+                return None
+            if st not in ("pending", "sent"):
+                return None
+            mid = self._message_id.get(idempotency_key) if st == "sent" else None
+            return OutboundDeliveryRecord(
+                status=cast(Literal["pending", "sent"], st),
+                telegram_message_id=mid,
+            )
+
+    async def mark_sent(self, idempotency_key: str, telegram_message_id: int) -> None:
+        async with self._lock:
+            if self._status.get(idempotency_key) != "pending":
+                return
+            self._status[idempotency_key] = "sent"
+            self._message_id[idempotency_key] = telegram_message_id
