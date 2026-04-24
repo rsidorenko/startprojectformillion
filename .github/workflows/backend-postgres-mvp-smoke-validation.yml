@@ -31,6 +31,8 @@ jobs:
   slice1-postgres-mvp-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      REPORT_DIR: ${{ github.workspace }}/backend/.test-reports
     defaults:
       run:
         working-directory: backend
@@ -47,27 +49,29 @@ jobs:
         run: python -m pip install -e .[test]
 
       - name: Prepare validation reports directory
-        run: mkdir -p .test-reports
+        run: mkdir -p "$REPORT_DIR"
 
       - name: Check Docker and Compose
         run: docker --version && docker compose version
 
       - name: Run smoke helper unit regression
-        run: python -m pytest -q tests/test_run_postgres_mvp_smoke_local.py tests/test_run_postgres_mvp_smoke.py tests/test_run_slice1_retention_dry_run.py --junitxml=.test-reports/backend-smoke-helper-regression.xml
+        run: python -m pytest -q tests/test_run_postgres_mvp_smoke_local.py tests/test_run_postgres_mvp_smoke.py tests/test_run_slice1_retention_dry_run.py --junitxml="$REPORT_DIR/backend-smoke-helper-regression.xml"
 
       - name: Run real local isolated PostgreSQL MVP smoke
         run: |
           set -o pipefail
-          python scripts/run_postgres_mvp_smoke_local.py 2>&1 | tee .test-reports/backend-postgres-mvp-smoke-local.log
+          python scripts/run_postgres_mvp_smoke_local.py 2>&1 | tee "$REPORT_DIR/backend-postgres-mvp-smoke-local.log"
 
       - name: Write smoke output summary
         if: always()
         run: |
           python - <<'PY'
+          import os
           from pathlib import Path
 
-          smoke_log = Path(".test-reports/backend-postgres-mvp-smoke-local.log")
-          summary_path = Path(".test-reports/backend-postgres-mvp-smoke-local-summary.txt")
+          report_dir = Path(os.environ["REPORT_DIR"])
+          smoke_log = report_dir / "backend-postgres-mvp-smoke-local.log"
+          summary_path = report_dir / "backend-postgres-mvp-smoke-local-summary.txt"
 
           if not smoke_log.exists():
               summary_path.write_text(
@@ -95,10 +99,14 @@ jobs:
           summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
           PY
 
+      - name: Diagnose validation reports directory
+        if: always()
+        run: ls -la "$REPORT_DIR"
+
       - name: Upload validation reports artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backend-postgres-mvp-smoke-validation-reports
-          path: backend/.test-reports
+          path: ${{ env.REPORT_DIR }}
           if-no-files-found: warn

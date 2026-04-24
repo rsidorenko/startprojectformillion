@@ -74,11 +74,12 @@ Notes:
 - Local runner sets local-only `DATABASE_URL` and mutating-test opt-in guard automatically for child smoke.
 - Do not replace this with manual external `DATABASE_URL` smoke in CI.
 - Cursor-driven manual dispatch still requires installed/authenticated `gh`, but normal push-triggered CI does not require local `gh`.
-- Workflow publishes artifact `backend-postgres-mvp-smoke-validation-reports` from `backend/.test-reports`.
+- CI writes reports via absolute workspace path `REPORT_DIR=${{ github.workspace }}/backend/.test-reports` and then uploads artifact `backend-postgres-mvp-smoke-validation-reports` from that directory.
 - Artifact includes:
   - `backend-smoke-helper-regression.xml` (JUnit for helper regression);
   - `backend-postgres-mvp-smoke-local.log` (raw smoke command output);
   - `backend-postgres-mvp-smoke-local-summary.txt` (safe tail summary for quick triage).
+- Any warning like `No files were found with the provided path: backend/.test-reports` must be treated as CI evidence issue even if the job result is green, because expected diagnostics were not persisted.
 - Use the JUnit XML to distinguish outcomes in CI:
   - passed tests are reported as successful test cases;
   - skipped tests are explicitly marked as skipped with reason when provided by pytest;
