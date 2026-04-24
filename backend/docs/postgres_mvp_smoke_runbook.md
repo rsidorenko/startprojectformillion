@@ -85,6 +85,8 @@ Notes:
 - If full backend regression fails, review its artifact separately; once stable/reliable again, this step can be promoted back to blocking.
 - Cursor-driven manual dispatch still requires installed/authenticated `gh`, but normal push-triggered CI does not require local `gh`.
 - CI writes reports from `backend` working directory using backend-relative `REPORT_DIR=test-reports`, then uploads artifact `backend-postgres-mvp-smoke-validation-reports` from repo-root path `backend/test-reports`.
+- Workflow opts JavaScript GitHub Actions into Node 24 via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` to avoid Node 20 deprecation warnings.
+- This Node 24 opt-in affects CI runner behavior for JavaScript actions only, not backend runtime/test semantics.
 - CI uses a non-hidden reports directory so artifact collection remains `actions/upload-artifact` friendly.
 - Artifact includes:
   - `backend-full-regression.xml` (JUnit for full backend regression suite);
