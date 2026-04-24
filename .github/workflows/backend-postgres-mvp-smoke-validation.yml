@@ -33,11 +33,59 @@ jobs:
       - name: Install backend dependencies
         run: python -m pip install -e .[test]
 
+      - name: Prepare validation reports directory
+        run: mkdir -p .test-reports
+
       - name: Check Docker and Compose
         run: docker --version && docker compose version
 
       - name: Run smoke helper unit regression
-        run: python -m pytest -q tests/test_run_postgres_mvp_smoke_local.py tests/test_run_postgres_mvp_smoke.py tests/test_run_slice1_retention_dry_run.py
+        run: python -m pytest -q tests/test_run_postgres_mvp_smoke_local.py tests/test_run_postgres_mvp_smoke.py tests/test_run_slice1_retention_dry_run.py --junitxml=.test-reports/backend-smoke-helper-regression.xml
 
       - name: Run real local isolated PostgreSQL MVP smoke
-        run: python scripts/run_postgres_mvp_smoke_local.py
+        run: |
+          set -o pipefail
+          python scripts/run_postgres_mvp_smoke_local.py 2>&1 | tee .test-reports/backend-postgres-mvp-smoke-local.log
+
+      - name: Write smoke output summary
+        if: always()
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          smoke_log = Path(".test-reports/backend-postgres-mvp-smoke-local.log")
+          summary_path = Path(".test-reports/backend-postgres-mvp-smoke-local-summary.txt")
+
+          if not smoke_log.exists():
+              summary_path.write_text(
+                  "smoke log was not captured; workflow likely failed before smoke execution\n",
+                  encoding="utf-8",
+              )
+              raise SystemExit(0)
+
+          lines = smoke_log.read_text(encoding="utf-8", errors="replace").splitlines()
+          if not lines:
+              summary_path.write_text("smoke log is empty\n", encoding="utf-8")
+              raise SystemExit(0)
+
+          max_lines = 80
+          start_index = max(0, len(lines) - max_lines)
+          trimmed = lines[start_index:]
+
+          summary_lines = [
+              "safe smoke output summary (tail)",
+              f"total_lines={len(lines)}",
+              f"tail_lines={len(trimmed)}",
+              "",
+              *trimmed,
+          ]
+          summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload validation reports artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-postgres-mvp-smoke-validation-reports
+          path: backend/.test-reports
+          if-no-files-found: warn

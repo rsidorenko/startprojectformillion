@@ -63,7 +63,7 @@ Expected CI commands (from `backend`):
 python -m pip install -e .[test]
 docker --version
 docker compose version
-python -m pytest -q tests/test_run_postgres_mvp_smoke_local.py tests/test_run_postgres_mvp_smoke.py tests/test_run_slice1_retention_dry_run.py
+python -m pytest -q tests/test_run_postgres_mvp_smoke_local.py tests/test_run_postgres_mvp_smoke.py tests/test_run_slice1_retention_dry_run.py --junitxml=.test-reports/backend-smoke-helper-regression.xml
 python scripts/run_postgres_mvp_smoke_local.py
 ```
 
@@ -71,6 +71,16 @@ Notes:
 - CI path uses disposable local Docker PostgreSQL through `scripts/run_postgres_mvp_smoke_local.py`.
 - Local runner sets local-only `DATABASE_URL` and mutating-test opt-in guard automatically for child smoke.
 - Do not replace this with manual external `DATABASE_URL` smoke in CI.
+- Workflow publishes artifact `backend-postgres-mvp-smoke-validation-reports` from `backend/.test-reports`.
+- Artifact includes:
+  - `backend-smoke-helper-regression.xml` (JUnit for helper regression);
+  - `backend-postgres-mvp-smoke-local.log` (raw smoke command output);
+  - `backend-postgres-mvp-smoke-local-summary.txt` (safe tail summary for quick triage).
+- Use the JUnit XML to distinguish outcomes in CI:
+  - passed tests are reported as successful test cases;
+  - skipped tests are explicitly marked as skipped with reason when provided by pytest;
+  - failures/errors are represented as failed test cases with traceback metadata.
+- Use smoke summary/log artifact to diagnose local-runner smoke failures when workflow red, without changing the manual external `DATABASE_URL` fallback path.
 
 ## Manual DATABASE_URL smoke (fallback path)
 Use this only when local isolated path is unavailable and only against explicitly isolated/dev DB.
