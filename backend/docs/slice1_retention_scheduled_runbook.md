@@ -75,6 +75,10 @@ slice1_retention_scheduled_cleanup dry_run=True cutoff=2026-04-24T12:00:00+00:00
 | Import / `ModuleNotFoundError: app` | Run from `backend` with `PYTHONPATH=src` (or install so `app` is importable). |
 | DB connectivity, auth, or SQL errors | Network, credentials, migrations, permissions; partial deletes are not auto-rolled back. |
 
+## CI (GitHub Actions)
+
+- Workflow `backend-postgres-mvp-smoke-validation` includes job `slice1-postgres-retention-integration`: an isolated GitHub `services.postgres` database with a **service-local** `DATABASE_URL` in that job only (not a stored secret) so opt-in **integration** tests in `tests/test_postgres_retention_*_integration.py` run in CI instead of skipping. Locally, those tests still **skip** without a real `DATABASE_URL` — set one only for isolated/dev DBs. Destructive scheduled **delete** behavior remains explicitly test-scoped (e.g. env + `SLICE1_RETENTION_SCHEDULED_ENABLE_DELETE` as used in the scheduled delete integration test, not a blind prod trigger).
+
 ## Security notes
 
 - **Never** log, paste, or commit raw `DATABASE_URL` or `BOT_TOKEN`; they carry credentials and access.

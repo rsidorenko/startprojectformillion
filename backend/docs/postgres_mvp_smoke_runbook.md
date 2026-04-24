@@ -59,15 +59,18 @@ Workflow expects Docker Engine + Docker Compose to be available on the selected 
 Workflow `backend-postgres-mvp-smoke-validation` now runs automatically on push to `main` when relevant backend/CI paths change.
 Manual `workflow_dispatch` is still available as a fallback trigger.
 
+A **second blocking job** in the same workflow, `slice1-postgres-retention-integration`, runs opt-in slice-1 retention **integration** tests against an **isolated** GitHub Actions `services.postgres` instance. The job sets a **service-local** `DATABASE_URL` in the test step (disposable in-workflow credentials, not a repository secret). This closes the local gap where those tests are **skipped** when `DATABASE_URL` is unset. The workflow does **not** use this URL for the Docker-based MVP smoke path; that path remains the local `run_postgres_mvp_smoke_local.py` gate in job `slice1-postgres-mvp-smoke`.
+
 ## Current delivery checkpoint
 - Scope: slice-1 PostgreSQL smoke/CI hardening checkpoint (documentation/release-marker only).
 - Current trigger semantics: `push`, `pull_request`, and `workflow_dispatch`.
 - Current blocking CI gate remains intentionally narrow:
   - targeted smoke helper regression;
-  - real local isolated PostgreSQL MVP smoke.
+  - real local isolated PostgreSQL MVP smoke;
+  - slice-1 retention **integration** tests (real `services.postgres` + `DATABASE_URL` in the retention job only; JUnit: `test-reports/backend-postgres-retention-integration.xml`; artifact: `backend-postgres-retention-integration-reports`).
 - Full backend regression remains advisory evidence (non-blocking) for this phase.
 - Admin/support internal read gate script runs as advisory evidence (non-blocking); see `backend/docs/admin_support_internal_read_gate_runbook.md`.
-- Reports artifact path/name: repo-root `backend/test-reports` uploaded as `backend-postgres-mvp-smoke-validation-reports`.
+- Reports artifact path/name: repo-root `backend/test-reports` uploaded as `backend-postgres-mvp-smoke-validation-reports` (MVP smoke job). Retention integration JUnit and related files: same directory layout under `backend/test-reports` in job `slice1-postgres-retention-integration`, uploaded separately as `backend-postgres-retention-integration-reports`.
 - Last known green evidence:
   - commit `1a2f797`;
   - auto-triggered run `#9`;

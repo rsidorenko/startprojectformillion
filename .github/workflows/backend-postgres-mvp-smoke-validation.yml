@@ -8,12 +8,16 @@ on:
       - "backend/pyproject.toml"
       - "backend/src/**"
       - "backend/tests/**"
+      - "backend/migrations/**"
       - "backend/scripts/run_postgres_mvp_smoke_local.py"
       - "backend/scripts/run_postgres_mvp_smoke.py"
       - "backend/scripts/run_slice1_retention_dry_run.py"
       - "backend/scripts/check_admin_support_internal_read_gate.py"
       - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
+      - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
+      - "backend/docs/slice1_retention_dry_run_runbook.md"
+      - "backend/docs/slice1_retention_scheduled_runbook.md"
       - "backend/docker-compose.postgres-smoke.yml"
   push:
     branches:
@@ -23,12 +27,16 @@ on:
       - "backend/pyproject.toml"
       - "backend/src/**"
       - "backend/tests/**"
+      - "backend/migrations/**"
       - "backend/scripts/run_postgres_mvp_smoke_local.py"
       - "backend/scripts/run_postgres_mvp_smoke.py"
       - "backend/scripts/run_slice1_retention_dry_run.py"
       - "backend/scripts/check_admin_support_internal_read_gate.py"
       - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
+      - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
+      - "backend/docs/slice1_retention_dry_run_runbook.md"
+      - "backend/docs/slice1_retention_scheduled_runbook.md"
       - "backend/docker-compose.postgres-smoke.yml"
 
 jobs:
@@ -165,5 +173,75 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: backend-postgres-mvp-smoke-validation-reports
+          path: backend/test-reports
+          if-no-files-found: warn
+
+  # Blocking: real PostgreSQL (GitHub Actions service) for opt-in slice-1 retention
+  # integration tests. DATABASE_URL is service-local and disposable, not a repo secret.
+  slice1-postgres-retention-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      REPORT_DIR: test-reports
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: slice1ret_ci
+          POSTGRES_PASSWORD: slice1retCILocal0nly
+          POSTGRES_DB: slice1retention_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U slice1ret_ci -d slice1retention_ci"
+          --health-interval 4s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: python -m pip install -e .[test]
+
+      - name: Prepare test reports directory
+        run: mkdir -p "$REPORT_DIR"
+
+      - name: Run opt-in slice-1 retention integration tests (PostgreSQL service)
+        env:
+          DATABASE_URL: postgresql://slice1ret_ci:slice1retCILocal0nly@127.0.0.1:5432/slice1retention_ci
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_postgres_retention_cleanup_dry_run_integration.py \
+            tests/test_postgres_retention_cleanup_delete_integration.py \
+            tests/test_postgres_retention_scheduled_dry_run_integration.py \
+            tests/test_postgres_retention_scheduled_delete_integration.py \
+            tests/test_postgres_retention_scheduled_opt_in_dry_run_integration.py \
+            tests/test_postgres_retention_outbound_delivery_ledger_integration.py \
+            --junitxml="$REPORT_DIR/backend-postgres-retention-integration.xml"
+
+      - name: Verify retention integration JUnit report
+        if: always()
+        run: |
+          set -euo pipefail
+          test -d "$REPORT_DIR"
+          test -f "$REPORT_DIR/backend-postgres-retention-integration.xml"
+          test -s "$REPORT_DIR/backend-postgres-retention-integration.xml"
+
+      - name: Upload retention integration reports
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: backend-postgres-retention-integration-reports
           path: backend/test-reports
           if-no-files-found: warn
