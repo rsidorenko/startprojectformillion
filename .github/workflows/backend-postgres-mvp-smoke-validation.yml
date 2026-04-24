@@ -11,6 +11,8 @@ on:
       - "backend/scripts/run_postgres_mvp_smoke_local.py"
       - "backend/scripts/run_postgres_mvp_smoke.py"
       - "backend/scripts/run_slice1_retention_dry_run.py"
+      - "backend/scripts/check_admin_support_internal_read_gate.py"
+      - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
       - "backend/docker-compose.postgres-smoke.yml"
   push:
@@ -24,6 +26,8 @@ on:
       - "backend/scripts/run_postgres_mvp_smoke_local.py"
       - "backend/scripts/run_postgres_mvp_smoke.py"
       - "backend/scripts/run_slice1_retention_dry_run.py"
+      - "backend/scripts/check_admin_support_internal_read_gate.py"
+      - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
       - "backend/docker-compose.postgres-smoke.yml"
 
@@ -51,6 +55,30 @@ jobs:
 
       - name: Prepare validation reports directory
         run: mkdir -p "$REPORT_DIR"
+
+      - name: Run admin support internal read gate (advisory evidence)
+        id: admin_support_internal_read_gate
+        continue-on-error: true
+        run: python scripts/check_admin_support_internal_read_gate.py
+
+      - name: Write admin support internal read gate advisory summary marker
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          report_dir = Path(os.environ["REPORT_DIR"])
+          summary_path = report_dir / "backend-admin-support-internal-read-gate-summary.txt"
+          outcome = "${{ steps.admin_support_internal_read_gate.outcome }}"
+          normalized = outcome if outcome in {"success", "failure"} else "unknown"
+
+          summary_lines = [
+              "admin support internal read gate advisory outcome marker",
+              f"internal_read_gate_outcome={normalized}",
+          ]
+          summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+          PY
 
       - name: Run full backend regression tests (advisory evidence, non-blocking)
         id: full_backend_regression

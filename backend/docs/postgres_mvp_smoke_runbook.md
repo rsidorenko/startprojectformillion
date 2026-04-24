@@ -66,6 +66,7 @@ Manual `workflow_dispatch` is still available as a fallback trigger.
   - targeted smoke helper regression;
   - real local isolated PostgreSQL MVP smoke.
 - Full backend regression remains advisory evidence (non-blocking) for this phase.
+- Admin/support internal read gate script runs as advisory evidence (non-blocking); see `backend/docs/admin_support_internal_read_gate_runbook.md`.
 - Reports artifact path/name: repo-root `backend/test-reports` uploaded as `backend-postgres-mvp-smoke-validation-reports`.
 - Last known green evidence:
   - commit `1a2f797`;
@@ -98,7 +99,7 @@ Notes:
 - Blocking CI gate is intentionally limited to:
   - targeted smoke helper regression;
   - real local isolated PostgreSQL MVP smoke.
-- CI sequencing is explicit: advisory full backend regression evidence first, then blocking targeted smoke helper regression, then blocking real local isolated PostgreSQL smoke.
+- CI sequencing is explicit: advisory admin/support internal read gate evidence, then advisory full backend regression evidence, then blocking targeted smoke helper regression, then blocking real local isolated PostgreSQL smoke.
 - If full backend regression fails, review its artifact separately; once stable/reliable again, this step can be promoted back to blocking.
 - Cursor-driven manual dispatch still requires installed/authenticated `gh`, but normal push-triggered CI does not require local `gh`.
 - CI writes reports from `backend` working directory using backend-relative `REPORT_DIR=test-reports`, then uploads artifact `backend-postgres-mvp-smoke-validation-reports` from repo-root path `backend/test-reports`.
@@ -108,6 +109,7 @@ Notes:
 - Artifact includes:
   - `backend-full-regression.xml` (JUnit for full backend regression suite);
   - `backend-full-regression-summary.txt` (advisory full-regression outcome marker);
+  - `backend-admin-support-internal-read-gate-summary.txt` (advisory internal read gate outcome marker);
   - `backend-smoke-helper-regression.xml` (JUnit for helper regression);
   - `backend-postgres-mvp-smoke-local.log` (raw smoke command output);
   - `backend-postgres-mvp-smoke-local-summary.txt` (safe tail summary for quick triage).

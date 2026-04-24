@@ -40,6 +40,17 @@ On failure, the process exits non-zero and prints **exactly one fixed line** to 
 - Keep internal HTTP listeners on private networks only; this script does not replace transport-level controls (mTLS, VPC, etc.).
 - Do not paste real `DATABASE_URL`, bot tokens, or customer identifiers into tickets, shell history, or issue reports when sharing script output.
 
+## CI
+
+The gate runs as **advisory evidence** in workflow `backend-postgres-mvp-smoke-validation` (after backend dependencies install, before blocking PostgreSQL MVP smoke gates). Failures are written to the published reports artifact as `backend-admin-support-internal-read-gate-summary.txt` (`internal_read_gate_outcome=success|failure|unknown` only); review failures but they **do not block** the targeted smoke helper regression or the real local isolated PostgreSQL MVP smoke gates.
+
+Local command remains:
+
+```bash
+cd backend
+python scripts/check_admin_support_internal_read_gate.py
+```
+
 ## Automation
 
 Pytest coverage: `tests/test_internal_read_gate_checks.py` and `tests/test_run_admin_support_internal_read_gate.py`.
