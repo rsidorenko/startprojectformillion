@@ -1,0 +1,5 @@
+# Generated backend CI/test reports
+backend/.test-reports/
+__pycache__/
+*.py[cod]
+.pytest_cache/
