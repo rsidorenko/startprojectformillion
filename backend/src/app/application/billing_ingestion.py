@@ -1,0 +1,177 @@
+"""Internal normalized billing fact ingestion (no HTTP, no provider parsing).
+
+Appends to BillingEventsLedgerRepository only. UC-05 and audit trail are out of scope for this slice.
+"""
+
+from __future__ import annotations
+
+import re
+import uuid
+from dataclasses import dataclass
+from datetime import datetime
+
+from app.persistence.billing_events_ledger_contracts import (
+    BillingEventAmountCurrency,
+    BillingEventLedgerRecord,
+    BillingEventLedgerStatus,
+    BillingEventsLedgerRepository,
+)
+from app.security.validation import ValidationError
+
+# Reasonable upper bounds (TEXT columns; keep ingress bounded)
+_MAX_ID_LEN = 256
+_MAX_EVENT_TYPE_LEN = 128
+_MAX_CORR_LEN = 256
+
+_REF_SAFE = re.compile(r"^[\w.\-:]{1,256}$")
+_CTRL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _require_non_empty_trimmed(*, name: str, value: str, max_len: int) -> str:
+    if not isinstance(value, str):
+        raise ValidationError(f"{name} must be a string")
+    s = value.strip()
+    if not s:
+        raise ValidationError(f"{name} is required")
+    if len(s) > max_len:
+        raise ValidationError(f"{name} exceeds maximum length")
+    return s
+
+
+def _optional_trimmed_id(*, name: str, value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValidationError(f"{name} must be a string or null")
+    s = value.strip()
+    if not s:
+        return None
+    if len(s) > _MAX_ID_LEN:
+        raise ValidationError(f"{name} exceeds maximum length")
+    if _CTRL.search(s):
+        raise ValidationError(f"{name} contains disallowed control characters")
+    return s
+
+
+def _validate_tz_aware(*, name: str, value: datetime) -> datetime:
+    if not isinstance(value, datetime):
+        raise ValidationError(f"{name} must be a datetime")
+    if value.tzinfo is None:
+        raise ValidationError(f"{name} must be timezone-aware")
+    return value
+
+
+def _validate_amount_currency(value: BillingEventAmountCurrency | None) -> BillingEventAmountCurrency | None:
+    if value is None:
+        return None
+    if not isinstance(value, BillingEventAmountCurrency):
+        raise ValidationError("amount_currency must be a BillingEventAmountCurrency or null")
+    a = value.amount_minor_units
+    c = value.currency_code
+    if a is not None and (not isinstance(a, int) or isinstance(a, bool) or a < 0):
+        raise ValidationError("amount_minor_units must be a non-negative int or null")
+    if c is not None:
+        if not isinstance(c, str) or not c.strip():
+            raise ValidationError("currency_code must be non-empty or null")
+        c_s = c.strip()
+        if len(c_s) > 16:
+            raise ValidationError("currency_code exceeds maximum length")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedBillingFactInput:
+    """Normalized scalars only — no raw provider payload field."""
+
+    billing_provider_key: str
+    external_event_id: str
+    event_type: str
+    event_effective_at: datetime
+    event_received_at: datetime
+    status: BillingEventLedgerStatus
+    ingestion_correlation_id: str
+    internal_user_id: str | None = None
+    checkout_attempt_id: str | None = None
+    amount_currency: BillingEventAmountCurrency | None = None
+    internal_fact_ref: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IngestNormalizedBillingFactResult:
+    record: BillingEventLedgerRecord
+    is_idempotent_replay: bool
+    """True when a prior fact for the same (provider, external_event_id) was already stored.
+
+    Best-effort: when a caller supplies the same internal_fact_ref on a replay and the returned
+    record matches the constructed one field-for-field, this is False.
+    See tests for the common auto-generated ref duplicate path.
+    """
+
+
+class IngestNormalizedBillingFactHandler:
+    """Validates :class:`NormalizedBillingFactInput` and appends to the billing events ledger."""
+
+    def __init__(self, ledger: BillingEventsLedgerRepository) -> None:
+        self._ledger = ledger
+
+    def _resolve_internal_fact_ref(self, provided: str | None) -> str:
+        if provided is None:
+            return str(uuid.uuid4())
+        s = provided.strip()
+        if not s:
+            raise ValidationError("internal_fact_ref is required when provided")
+        if len(s) > _MAX_ID_LEN:
+            raise ValidationError("internal_fact_ref exceeds maximum length")
+        if not _REF_SAFE.fullmatch(s):
+            raise ValidationError("internal_fact_ref has invalid format")
+        return s
+
+    def _build_record(self, input_: NormalizedBillingFactInput) -> BillingEventLedgerRecord:
+        pkey = _require_non_empty_trimmed(
+            name="billing_provider_key", value=input_.billing_provider_key, max_len=_MAX_ID_LEN
+        )
+        ext = _require_non_empty_trimmed(
+            name="external_event_id", value=input_.external_event_id, max_len=_MAX_ID_LEN
+        )
+        ev_type = _require_non_empty_trimmed(
+            name="event_type", value=input_.event_type, max_len=_MAX_EVENT_TYPE_LEN
+        )
+        corr = _require_non_empty_trimmed(
+            name="ingestion_correlation_id", value=input_.ingestion_correlation_id, max_len=_MAX_CORR_LEN
+        )
+        t_eff = _validate_tz_aware(name="event_effective_at", value=input_.event_effective_at)
+        t_rec = _validate_tz_aware(name="event_received_at", value=input_.event_received_at)
+        if not isinstance(input_.status, BillingEventLedgerStatus):
+            raise ValidationError("status must be a BillingEventLedgerStatus value")
+
+        internal_user_id = _optional_trimmed_id(name="internal_user_id", value=input_.internal_user_id)
+        checkout = _optional_trimmed_id(name="checkout_attempt_id", value=input_.checkout_attempt_id)
+
+        amount = _validate_amount_currency(input_.amount_currency)
+        internal_ref = self._resolve_internal_fact_ref(input_.internal_fact_ref)
+
+        return BillingEventLedgerRecord(
+            internal_fact_ref=internal_ref,
+            billing_provider_key=pkey,
+            external_event_id=ext,
+            event_type=ev_type,
+            event_effective_at=t_eff,
+            event_received_at=t_rec,
+            internal_user_id=internal_user_id,
+            checkout_attempt_id=checkout,
+            amount_currency=amount,
+            status=input_.status,
+            ingestion_correlation_id=corr,
+        )
+
+    async def handle(self, input_: NormalizedBillingFactInput) -> IngestNormalizedBillingFactResult:
+        """Persist the normalized fact (idempotent on provider + external_event_id)."""
+        constructed = self._build_record(input_)
+        stored = await self._ledger.append_or_get_by_provider_and_external_id(constructed)
+        # Idempotent hit: same (provider, external_id) already stored with a different internal ref
+        # (typical when internal_fact_ref is auto-generated per request).
+        is_replay = stored.internal_fact_ref != constructed.internal_fact_ref
+        return IngestNormalizedBillingFactResult(
+            record=stored,
+            is_idempotent_replay=is_replay,
+        )

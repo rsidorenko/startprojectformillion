@@ -229,6 +229,7 @@ jobs:
             tests/test_postgres_retention_scheduled_opt_in_dry_run_integration.py \
             tests/test_postgres_retention_outbound_delivery_ledger_integration.py \
             tests/test_postgres_billing_events_ledger.py \
+            tests/test_postgres_billing_ingestion.py \
             tests/test_postgres_migration_ledger_integration.py \
             --junitxml="$REPORT_DIR/backend-postgres-retention-integration.xml"
 
