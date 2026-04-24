@@ -18,6 +18,7 @@ on:
       - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
       - "backend/docs/slice1_retention_dry_run_runbook.md"
       - "backend/docs/slice1_retention_scheduled_runbook.md"
+      - "backend/docs/billing_subscription_apply_runbook.md"
       - "backend/docker-compose.postgres-smoke.yml"
   push:
     branches:
@@ -37,6 +38,7 @@ on:
       - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
       - "backend/docs/slice1_retention_dry_run_runbook.md"
       - "backend/docs/slice1_retention_scheduled_runbook.md"
+      - "backend/docs/billing_subscription_apply_runbook.md"
       - "backend/docker-compose.postgres-smoke.yml"
 
 jobs:
@@ -233,6 +235,7 @@ jobs:
             tests/test_postgres_billing_ingestion_main.py \
             tests/test_postgres_migration_ledger_integration.py \
             tests/test_postgres_uc05_apply_billing_fact.py \
+            tests/test_postgres_billing_subscription_apply_main.py \
             --junitxml="$REPORT_DIR/backend-postgres-retention-integration.xml"
 
       - name: Verify retention integration JUnit report
