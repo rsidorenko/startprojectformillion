@@ -39,6 +39,7 @@ from app.persistence.postgres_idempotency import PostgresIdempotencyRepository
 from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
 from app.persistence.postgres_user_identity import PostgresUserIdentityRepository
 from app.persistence.billing_events_ledger_in_memory import InMemoryBillingEventsLedgerRepository
+from app.persistence.postgres_billing_events_ledger import PostgresBillingEventsLedgerRepository
 from app.persistence.mismatch_quarantine_in_memory import InMemoryMismatchQuarantineRepository
 from app.persistence.reconciliation_runs_in_memory import InMemoryReconciliationRunsRepository
 
@@ -69,6 +70,7 @@ __all__ = [
     "PostgresIdempotencyRepository",
     "PostgresSubscriptionSnapshotReader",
     "PostgresUserIdentityRepository",
+    "PostgresBillingEventsLedgerRepository",
     "BillingEventAmountCurrency",
     "BillingEventLedgerRecord",
     "BillingEventLedgerStatus",
