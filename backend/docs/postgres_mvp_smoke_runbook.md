@@ -59,6 +59,23 @@ Workflow expects Docker Engine + Docker Compose to be available on the selected 
 Workflow `backend-postgres-mvp-smoke-validation` now runs automatically on push to `main` when relevant backend/CI paths change.
 Manual `workflow_dispatch` is still available as a fallback trigger.
 
+## Current delivery checkpoint
+- Scope: slice-1 PostgreSQL smoke/CI hardening checkpoint (documentation/release-marker only).
+- Current trigger semantics: `push`, `pull_request`, and `workflow_dispatch`.
+- Current blocking CI gate remains intentionally narrow:
+  - targeted smoke helper regression;
+  - real local isolated PostgreSQL MVP smoke.
+- Full backend regression remains advisory evidence (non-blocking) for this phase.
+- Reports artifact path/name: repo-root `backend/test-reports` uploaded as `backend-postgres-mvp-smoke-validation-reports`.
+- Last known green evidence:
+  - commit `1a2f797`;
+  - auto-triggered run `#9`;
+  - conclusion `success`;
+  - artifact upload confirmed.
+- Non-blocking tooling follow-up:
+  - residual Node20 warning may still appear for `actions/upload-artifact@v5` even with Node 24 opt-in;
+  - treat as upstream/tooling messaging follow-up, not a backend runtime gate regression.
+
 Expected CI commands (from `backend`):
 
 ```bash
