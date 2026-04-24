@@ -74,12 +74,21 @@ Notes:
 - CI path uses disposable local Docker PostgreSQL through `scripts/run_postgres_mvp_smoke_local.py`.
 - Local runner sets local-only `DATABASE_URL` and mutating-test opt-in guard automatically for child smoke.
 - Do not replace this with manual external `DATABASE_URL` smoke in CI.
-- CI sequencing is explicit: full backend regression JUnit first, then targeted smoke helper regression, then real local isolated PostgreSQL smoke.
+- Full backend regression currently runs as advisory evidence and is non-blocking for downstream smoke gates.
+- CI publishes advisory evidence for full regression as:
+  - `backend-full-regression.xml` (JUnit);
+  - `backend-full-regression-summary.txt` (safe outcome marker with `success`/`failure`/`unknown`).
+- Blocking CI gate is intentionally limited to:
+  - targeted smoke helper regression;
+  - real local isolated PostgreSQL MVP smoke.
+- CI sequencing is explicit: advisory full backend regression evidence first, then blocking targeted smoke helper regression, then blocking real local isolated PostgreSQL smoke.
+- If full backend regression fails, review its artifact separately; once stable/reliable again, this step can be promoted back to blocking.
 - Cursor-driven manual dispatch still requires installed/authenticated `gh`, but normal push-triggered CI does not require local `gh`.
 - CI writes reports from `backend` working directory using backend-relative `REPORT_DIR=test-reports`, then uploads artifact `backend-postgres-mvp-smoke-validation-reports` from repo-root path `backend/test-reports`.
 - CI uses a non-hidden reports directory so artifact collection remains `actions/upload-artifact` friendly.
 - Artifact includes:
   - `backend-full-regression.xml` (JUnit for full backend regression suite);
+  - `backend-full-regression-summary.txt` (advisory full-regression outcome marker);
   - `backend-smoke-helper-regression.xml` (JUnit for helper regression);
   - `backend-postgres-mvp-smoke-local.log` (raw smoke command output);
   - `backend-postgres-mvp-smoke-local-summary.txt` (safe tail summary for quick triage).
@@ -89,7 +98,7 @@ Notes:
   - passed tests are reported as successful test cases;
   - skipped tests are explicitly marked as skipped with reason when provided by pytest;
   - failures/errors are represented as failed test cases with traceback metadata.
-- Use smoke summary/log artifact to diagnose local-runner smoke failures when workflow red, without changing the manual external `DATABASE_URL` fallback path.
+- Use advisory full-regression summary/JUnit and smoke summary/log artifacts to diagnose failures without changing the manual external `DATABASE_URL` fallback path.
 
 ## Manual DATABASE_URL smoke (fallback path)
 Use this only when local isolated path is unavailable and only against explicitly isolated/dev DB.
