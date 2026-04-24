@@ -16,19 +16,12 @@ from datetime import datetime
 from pathlib import Path
 import asyncpg
 
-from app.application.billing_ingestion import (
-    IngestNormalizedBillingFactHandler,
-    NormalizedBillingFactInput,
-)
+from app.application.billing_ingestion import NormalizedBillingFactInput
 from app.persistence.billing_events_ledger_contracts import (
     BillingEventAmountCurrency,
     BillingEventLedgerStatus,
-    BillingEventLedgerRecord,
-    BillingEventsLedgerRepository,
 )
-from app.persistence.billing_ingestion_audit_contracts import BillingIngestionAuditAppender
-from app.persistence.postgres_billing_events_ledger import PostgresBillingEventsLedgerRepository
-from app.persistence.postgres_billing_ingestion_audit import PostgresBillingIngestionAuditAppender
+from app.persistence.postgres_billing_ingestion_atomic import PostgresAtomicBillingIngestion
 from app.security.config import ConfigurationError, load_runtime_config
 from app.security.errors import PersistenceDependencyError
 from app.security.validation import ValidationError
@@ -236,18 +229,6 @@ def _ingest_outcome_label(is_idempotent_replay: bool) -> str:
     return "idempotent_replay" if is_idempotent_replay else "accepted"
 
 
-async def _run_ingest(
-    input_: NormalizedBillingFactInput,
-    *,
-    ledger: BillingEventsLedgerRepository,
-    audit: BillingIngestionAuditAppender,
-) -> tuple[str, BillingEventLedgerRecord]:
-    handler = IngestNormalizedBillingFactHandler(ledger, audit)
-    result = await handler.handle(input_)
-    r = result.record
-    return _ingest_outcome_label(result.is_idempotent_replay), r
-
-
 OpenPoolFn = Callable[[str], Awaitable[asyncpg.Pool]]
 
 
@@ -257,18 +238,15 @@ async def async_run_billing_ingest_from_parsed(
     dsn: str,
     open_pool: OpenPoolFn | None = None,
 ) -> tuple[str, str, str, str]:
-    """Ingest one fact; returns (outcome_label, internal_fact_ref, status, correlation_id)."""
+    """Ingest one fact in a single Postgres transaction; returns (outcome, ref, status, correlation_id)."""
     open_fn: OpenPoolFn = open_pool if open_pool is not None else _default_open_pool
     pool = await open_fn(dsn)
     try:
-        ledger: BillingEventsLedgerRepository = PostgresBillingEventsLedgerRepository(pool)
-        audit: BillingIngestionAuditAppender = PostgresBillingIngestionAuditAppender(pool)
-        out_label, rec = await _run_ingest(
-            input_,
-            ledger=ledger,
-            audit=audit,
-        )
-        return (out_label, rec.internal_fact_ref, rec.status.value, rec.ingestion_correlation_id)
+        atomic = PostgresAtomicBillingIngestion(pool)
+        result = await atomic.ingest_normalized_billing_fact(input_)
+        r = result.record
+        out_label = _ingest_outcome_label(result.is_idempotent_replay)
+        return (out_label, r.internal_fact_ref, r.status.value, r.ingestion_correlation_id)
     finally:
         await pool.close()
 

@@ -37,10 +37,10 @@ class PostgresBillingIngestionAuditAppender:
     def _new_audit_event_id() -> str:
         return str(uuid.uuid4())
 
-    def _params(self, record: BillingIngestionAuditRecord) -> tuple[object, ...]:
-        eid = self._new_audit_event_id()
+    @staticmethod
+    def _params_for_insert(audit_event_id: str, record: BillingIngestionAuditRecord) -> tuple[object, ...]:
         return (
-            eid,
+            audit_event_id,
             record.internal_fact_ref,
             record.billing_provider_key,
             record.external_event_id,
@@ -50,6 +50,26 @@ class PostgresBillingIngestionAuditAppender:
             record.billing_event_status,
             record.is_idempotent_replay,
         )
+
+    def _params(self, record: BillingIngestionAuditRecord) -> tuple[object, ...]:
+        return PostgresBillingIngestionAuditAppender._params_for_insert(
+            self._new_audit_event_id(), record
+        )
+
+    @staticmethod
+    async def append_in_connection(
+        conn: asyncpg.Connection,
+        record: BillingIngestionAuditRecord,
+    ) -> None:
+        """Insert one audit row using *conn*; caller must scope transaction/rollback with ledger write."""
+        eid = PostgresBillingIngestionAuditAppender._new_audit_event_id()
+        try:
+            await conn.execute(
+                PostgresBillingIngestionAuditAppender._INSERT,
+                *PostgresBillingIngestionAuditAppender._params_for_insert(eid, record),
+            )
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
 
     async def append(self, record: BillingIngestionAuditRecord) -> None:
         try:

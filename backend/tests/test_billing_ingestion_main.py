@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.application.billing_ingestion import NormalizedBillingFactInput
+from app.application.billing_ingestion import IngestNormalizedBillingFactResult, NormalizedBillingFactInput
 from app.persistence.billing_events_ledger_contracts import (
     BillingEventAmountCurrency,
+    BillingEventLedgerRecord,
     BillingEventLedgerStatus,
 )
 from app.security.validation import ValidationError
@@ -18,6 +19,7 @@ from app.security.validation import ValidationError
 from app.application.billing_ingestion_main import (
     BILLING_NORMALIZED_INGEST_ENABLE,
     async_main,
+    async_run_billing_ingest_from_parsed,
     parse_json_to_normalized_billing_input,
 )
 
@@ -159,3 +161,52 @@ def test_reject_unsupported_schema_string_version() -> None:
     d["schema_version"] = "1"
     with pytest.raises(ValidationError, match="schema_version must be 1"):
         parse_json_to_normalized_billing_input(json.dumps(d))
+
+
+@pytest.mark.asyncio
+async def test_async_run_billing_ingest_uses_postgres_atomic_billing_ingestion() -> None:
+    """Wiring: one PostgresAtomicBillingIngestion ingest per DSN run (no split ledger+audit pool calls)."""
+    from datetime import datetime, timezone
+
+    t = datetime(2026, 1, 18, 9, 0, 0, tzinfo=timezone.utc)
+    inp = NormalizedBillingFactInput(
+        billing_provider_key="p_wiring",
+        external_event_id="ext-wiring-1",
+        event_type="payment_succeeded",
+        event_effective_at=t,
+        event_received_at=t,
+        status=BillingEventLedgerStatus.ACCEPTED,
+        ingestion_correlation_id="corr-wiring",
+    )
+    rec = BillingEventLedgerRecord(
+        internal_fact_ref="if-ref-1",
+        billing_provider_key="p_wiring",
+        external_event_id="ext-wiring-1",
+        event_type="payment_succeeded",
+        event_effective_at=t,
+        event_received_at=t,
+        internal_user_id=None,
+        checkout_attempt_id=None,
+        amount_currency=None,
+        status=BillingEventLedgerStatus.ACCEPTED,
+        ingestion_correlation_id="corr-wiring",
+    )
+    result = IngestNormalizedBillingFactResult(record=rec, is_idempotent_replay=False)
+    pool = MagicMock()
+    pool.close = AsyncMock()
+
+    async def fake_open(_dsn: str):
+        return pool
+
+    with patch("app.application.billing_ingestion_main.PostgresAtomicBillingIngestion") as c_atomic:
+        inst = c_atomic.return_value
+        inst.ingest_normalized_billing_fact = AsyncMock(return_value=result)
+        out = await async_run_billing_ingest_from_parsed(
+            inp,
+            dsn="postgresql://u:p@127.0.0.1:5432/wiring",
+            open_pool=fake_open,
+        )
+        c_atomic.assert_called_once_with(pool)
+        inst.ingest_normalized_billing_fact.assert_awaited_once_with(inp)
+    assert out == ("accepted", "if-ref-1", "accepted", "corr-wiring")
+    pool.close.assert_awaited_once()

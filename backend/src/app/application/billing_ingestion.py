@@ -116,6 +116,60 @@ class IngestNormalizedBillingFactResult:
     """
 
 
+def resolve_internal_fact_ref_for_ingest(provided: str | None) -> str:
+    """Validate and resolve :attr:`NormalizedBillingFactInput.internal_fact_ref` to a string ref."""
+    if provided is None:
+        return str(uuid.uuid4())
+    s = provided.strip()
+    if not s:
+        raise ValidationError("internal_fact_ref is required when provided")
+    if len(s) > _MAX_ID_LEN:
+        raise ValidationError("internal_fact_ref exceeds maximum length")
+    if not _REF_SAFE.fullmatch(s):
+        raise ValidationError("internal_fact_ref has invalid format")
+    return s
+
+
+def build_ledger_record_for_ingest(input_: NormalizedBillingFactInput) -> BillingEventLedgerRecord:
+    """Map validated :class:`NormalizedBillingFactInput` to a :class:`BillingEventLedgerRecord` (no I/O)."""
+    pkey = _require_non_empty_trimmed(
+        name="billing_provider_key", value=input_.billing_provider_key, max_len=_MAX_ID_LEN
+    )
+    ext = _require_non_empty_trimmed(
+        name="external_event_id", value=input_.external_event_id, max_len=_MAX_ID_LEN
+    )
+    ev_type = _require_non_empty_trimmed(
+        name="event_type", value=input_.event_type, max_len=_MAX_EVENT_TYPE_LEN
+    )
+    corr = _require_non_empty_trimmed(
+        name="ingestion_correlation_id", value=input_.ingestion_correlation_id, max_len=_MAX_CORR_LEN
+    )
+    t_eff = _validate_tz_aware(name="event_effective_at", value=input_.event_effective_at)
+    t_rec = _validate_tz_aware(name="event_received_at", value=input_.event_received_at)
+    if not isinstance(input_.status, BillingEventLedgerStatus):
+        raise ValidationError("status must be a BillingEventLedgerStatus value")
+
+    internal_user_id = _optional_trimmed_id(name="internal_user_id", value=input_.internal_user_id)
+    checkout = _optional_trimmed_id(name="checkout_attempt_id", value=input_.checkout_attempt_id)
+
+    amount = _validate_amount_currency(input_.amount_currency)
+    internal_ref = resolve_internal_fact_ref_for_ingest(input_.internal_fact_ref)
+
+    return BillingEventLedgerRecord(
+        internal_fact_ref=internal_ref,
+        billing_provider_key=pkey,
+        external_event_id=ext,
+        event_type=ev_type,
+        event_effective_at=t_eff,
+        event_received_at=t_rec,
+        internal_user_id=internal_user_id,
+        checkout_attempt_id=checkout,
+        amount_currency=amount,
+        status=input_.status,
+        ingestion_correlation_id=corr,
+    )
+
+
 class IngestNormalizedBillingFactHandler:
     """Validates :class:`NormalizedBillingFactInput` and appends to the billing events ledger."""
 
@@ -123,55 +177,8 @@ class IngestNormalizedBillingFactHandler:
         self._ledger = ledger
         self._audit = audit
 
-    def _resolve_internal_fact_ref(self, provided: str | None) -> str:
-        if provided is None:
-            return str(uuid.uuid4())
-        s = provided.strip()
-        if not s:
-            raise ValidationError("internal_fact_ref is required when provided")
-        if len(s) > _MAX_ID_LEN:
-            raise ValidationError("internal_fact_ref exceeds maximum length")
-        if not _REF_SAFE.fullmatch(s):
-            raise ValidationError("internal_fact_ref has invalid format")
-        return s
-
     def _build_record(self, input_: NormalizedBillingFactInput) -> BillingEventLedgerRecord:
-        pkey = _require_non_empty_trimmed(
-            name="billing_provider_key", value=input_.billing_provider_key, max_len=_MAX_ID_LEN
-        )
-        ext = _require_non_empty_trimmed(
-            name="external_event_id", value=input_.external_event_id, max_len=_MAX_ID_LEN
-        )
-        ev_type = _require_non_empty_trimmed(
-            name="event_type", value=input_.event_type, max_len=_MAX_EVENT_TYPE_LEN
-        )
-        corr = _require_non_empty_trimmed(
-            name="ingestion_correlation_id", value=input_.ingestion_correlation_id, max_len=_MAX_CORR_LEN
-        )
-        t_eff = _validate_tz_aware(name="event_effective_at", value=input_.event_effective_at)
-        t_rec = _validate_tz_aware(name="event_received_at", value=input_.event_received_at)
-        if not isinstance(input_.status, BillingEventLedgerStatus):
-            raise ValidationError("status must be a BillingEventLedgerStatus value")
-
-        internal_user_id = _optional_trimmed_id(name="internal_user_id", value=input_.internal_user_id)
-        checkout = _optional_trimmed_id(name="checkout_attempt_id", value=input_.checkout_attempt_id)
-
-        amount = _validate_amount_currency(input_.amount_currency)
-        internal_ref = self._resolve_internal_fact_ref(input_.internal_fact_ref)
-
-        return BillingEventLedgerRecord(
-            internal_fact_ref=internal_ref,
-            billing_provider_key=pkey,
-            external_event_id=ext,
-            event_type=ev_type,
-            event_effective_at=t_eff,
-            event_received_at=t_rec,
-            internal_user_id=internal_user_id,
-            checkout_attempt_id=checkout,
-            amount_currency=amount,
-            status=input_.status,
-            ingestion_correlation_id=corr,
-        )
+        return build_ledger_record_for_ingest(input_)
 
     async def handle(self, input_: NormalizedBillingFactInput) -> IngestNormalizedBillingFactResult:
         """Persist the normalized fact (idempotent on provider + external_event_id)."""
@@ -186,7 +193,9 @@ class IngestNormalizedBillingFactHandler:
             else BILLING_INGESTION_OUTCOME_ACCEPTED
         )
         # Fail-closed: :class:`PersistenceDependencyError` from the audit appender (e.g. Postgres)
-        # propagates to the caller; ledger already contains the fact for this attempt.
+        # propagates to the caller. Non-atomic repository wiring: ledger may already be committed
+        # before the audit write; the operator Postgres entrypoint uses a single database transaction
+        # for ledger+audit.
         await self._audit.append(
             BillingIngestionAuditRecord(
                 internal_fact_ref=stored.internal_fact_ref,

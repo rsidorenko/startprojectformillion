@@ -164,6 +164,31 @@ class PostgresBillingEventsLedgerRepository(BillingEventsLedgerRepository):
             raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_INVARIANT)
         return _row_to_record(cur)
 
+    @staticmethod
+    async def append_or_get_in_connection(
+        conn: asyncpg.Connection,
+        record: BillingEventLedgerRecord,
+    ) -> BillingEventLedgerRecord:
+        """Idempotent insert/select using *conn*; caller must scope transaction/rollback (e.g. one txn with audit)."""
+        params = PostgresBillingEventsLedgerRepository._insert_params(record)
+        try:
+            ins = await conn.fetchrow(
+                PostgresBillingEventsLedgerRepository._INSERT,
+                *params,
+            )
+            if ins is not None:
+                return _row_to_record(ins)
+            cur = await conn.fetchrow(
+                PostgresBillingEventsLedgerRepository._SELECT_BY_PROVIDER_EXTERNAL,
+                record.billing_provider_key,
+                record.external_event_id,
+            )
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
+        if cur is None:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_INVARIANT)
+        return _row_to_record(cur)
+
     async def get_user_billing_facts_summary(
         self,
         internal_user_id: str,
