@@ -135,7 +135,7 @@ def test_one_raw_start_poll_once_one_send() -> None:
     _run(main())
 
 
-def test_duplicate_raw_start_two_poll_once_two_sends_one_audit() -> None:
+def test_duplicate_raw_start_two_poll_once_replay_second_noop_one_audit() -> None:
     raw = _update(update_id=5, message=_base_message(user_id=42, text="/start"))
     client = FakeRawClient(rounds=[[raw], [raw]])
 
@@ -144,7 +144,8 @@ def test_duplicate_raw_start_two_poll_once_two_sends_one_audit() -> None:
         cid = new_correlation_id()
         r1 = await b.runtime.poll_once(correlation_id=cid)
         r2 = await b.runtime.poll_once(correlation_id=cid)
-        assert r1.send_count == 1 and r2.send_count == 1
+        assert r1.send_count == 1 and r1.noop_count == 0
+        assert r2.send_count == 0 and r2.noop_count == 1
         assert len(await b.composition.audit.recorded_events()) == 1
 
     _run(main())

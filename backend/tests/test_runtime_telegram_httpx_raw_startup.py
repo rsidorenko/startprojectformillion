@@ -180,7 +180,7 @@ def test_one_poll_start_yields_one_send() -> None:
     _run(main())
 
 
-def test_two_polls_same_update_id_two_sends_one_audit() -> None:
+def test_two_polls_same_update_id_replay_second_noop_one_audit() -> None:
     raw = _update(update_id=5, message=_base_message(user_id=42, text="/start"))
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -197,7 +197,8 @@ def test_two_polls_same_update_id_two_sends_one_audit() -> None:
             cid = new_correlation_id()
             r1 = await b.bundle.runtime.poll_once(correlation_id=cid)
             r2 = await b.bundle.runtime.poll_once(correlation_id=cid)
-            assert r1.send_count == 1 and r2.send_count == 1
+            assert r1.send_count == 1 and r1.noop_count == 0
+            assert r2.send_count == 0 and r2.noop_count == 1
             assert len(await b.bundle.composition.audit.recorded_events()) == 1
 
     _run(main())

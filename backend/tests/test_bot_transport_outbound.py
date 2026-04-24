@@ -63,7 +63,7 @@ def test_bootstrap_success_stable_message_key() -> None:
     assert plan.correlation_id == cid
 
 
-def test_bootstrap_duplicate_replay_same_outbound_plan_as_success() -> None:
+def test_bootstrap_idempotent_replay_sets_outbound_suppress_flag() -> None:
     cid = new_correlation_id()
     first = map_bootstrap_identity_to_transport(
         BootstrapIdentityResult(
@@ -83,9 +83,11 @@ def test_bootstrap_duplicate_replay_same_outbound_plan_as_success() -> None:
             idempotent_replay=True,
         ),
     )
-    assert map_transport_safe_to_outbound_plan(first) == map_transport_safe_to_outbound_plan(
-        replay
-    )
+    p_first = map_transport_safe_to_outbound_plan(first)
+    p_replay = map_transport_safe_to_outbound_plan(replay)
+    assert p_first.message_key == p_replay.message_key == OutboundMessageKey.IDENTITY_READY.value
+    assert p_first.replay_suppresses_outbound is False
+    assert p_replay.replay_suppresses_outbound is True
 
 
 def test_onboarding_guidance_has_onboarding_action_hint() -> None:

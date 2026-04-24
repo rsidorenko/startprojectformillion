@@ -56,15 +56,21 @@ def test_runtime_wrapper_private_start_send_message() -> None:
     _run(main())
 
 
-def test_runtime_wrapper_duplicate_private_start_same_send_one_audit() -> None:
+def test_runtime_wrapper_duplicate_private_start_first_send_second_noop_one_audit() -> None:
+    """Second identical raw /start (same update_id) is UC-01 replay: outbound suppressed (NOOP).
+
+    Suppress-send does not address first send failing after commit without a delivery ledger.
+    """
     async def main() -> None:
         c = build_slice1_composition()
         cid = new_correlation_id()
         raw = _update(update_id=5, message=_base_message(user_id=42, text="/start"))
         a1 = await handle_slice1_telegram_update_to_runtime_action(raw, c, correlation_id=cid)
         a2 = await handle_slice1_telegram_update_to_runtime_action(raw, c, correlation_id=cid)
-        assert a1.kind is a2.kind is TelegramRuntimeActionKind.SEND_MESSAGE
-        assert a1.message_text == a2.message_text
+        assert a1.kind is TelegramRuntimeActionKind.SEND_MESSAGE
+        assert a2.kind is TelegramRuntimeActionKind.NOOP
+        assert a1.message_text
+        assert a2.message_text is None
         assert a1.correlation_id == a2.correlation_id == cid
         assert len(await c.audit.recorded_events()) == 1
 
@@ -204,8 +210,10 @@ def test_slice1_telegram_runtime_wrapper_handle_and_dispatch() -> None:
         w = Slice1TelegramRuntimeWrapper(c)
         a1 = await w.handle(raw, correlation_id=cid)
         a2 = await w.dispatch(raw, correlation_id=cid)
-        assert a1.kind is a2.kind is TelegramRuntimeActionKind.SEND_MESSAGE
-        assert a1.message_text == a2.message_text
+        assert a1.kind is TelegramRuntimeActionKind.SEND_MESSAGE
+        assert a2.kind is TelegramRuntimeActionKind.NOOP
+        assert a1.message_text
+        assert a2.message_text is None
 
     _run(main())
 

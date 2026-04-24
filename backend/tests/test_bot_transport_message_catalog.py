@@ -37,6 +37,7 @@ def _plan(
     next_action_key: str | None = None,
     keyboard_marker: str = OutboundKeyboardMarker.NONE.value,
     correlation_id: str = _CID,
+    replay_suppresses_outbound: bool = False,
 ) -> TelegramOutboundPlan:
     return TelegramOutboundPlan(
         category=category,
@@ -44,6 +45,7 @@ def _plan(
         next_action_key=next_action_key,
         keyboard_marker=keyboard_marker,
         correlation_id=correlation_id,
+        replay_suppresses_outbound=replay_suppresses_outbound,
     )
 
 
@@ -80,10 +82,22 @@ def test_bootstrap_success_stable_text(identity_ready_plan: TelegramOutboundPlan
 
 
 def test_bootstrap_replay_same_as_success(identity_ready_plan: TelegramOutboundPlan) -> None:
-    """Replay uses the same outbound plan shape as first success; render matches."""
+    """Same catalog keys render the same text; default plan has no outbound suppress flag."""
     first = render_telegram_outbound_plan(identity_ready_plan)
     replay = render_telegram_outbound_plan(identity_ready_plan)
     assert first == replay
+    assert first.replay_suppresses_outbound is False
+
+
+def test_render_passes_replay_suppress_flag_without_changing_identity_ready_text() -> None:
+    plan = _plan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=OutboundMessageKey.IDENTITY_READY.value,
+        replay_suppresses_outbound=True,
+    )
+    out = render_telegram_outbound_plan(plan)
+    assert out.message_text == "Identity is ready. You can continue in this chat."
+    assert out.replay_suppresses_outbound is True
 
 
 def test_onboarding_with_action_key() -> None:

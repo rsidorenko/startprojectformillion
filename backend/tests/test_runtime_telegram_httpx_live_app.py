@@ -232,7 +232,7 @@ def test_run_until_stopped_uses_external_control(monkeypatch: pytest.MonkeyPatch
     asyncio.run(main())
 
 
-def test_same_app_twice_same_update_two_sends_one_audit() -> None:
+def test_same_app_twice_same_update_replay_second_noop_one_audit() -> None:
     send_posts = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -253,8 +253,9 @@ def test_same_app_twice_same_update_two_sends_one_audit() -> None:
             cid = new_correlation_id()
             s1 = await app.run_iterations(1, correlation_id=cid)
             s2 = await app.run_iterations(1, correlation_id=cid)
-            assert s1.send_count == 1 and s2.send_count == 1
-            assert send_posts == 2
+            assert s1.send_count == 1 and s1.noop_count == 0
+            assert s2.send_count == 0 and s2.noop_count == 1
+            assert send_posts == 1
             events = await app.bundle.bundle.composition.audit.recorded_events()
             assert len(events) == 1
             await app.aclose()

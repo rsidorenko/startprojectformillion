@@ -52,7 +52,7 @@ def test_facade_raw_private_start_returns_identity_ready_rendered() -> None:
     _run(main())
 
 
-def test_facade_duplicate_raw_start_same_rendered_one_audit() -> None:
+def test_facade_duplicate_raw_start_replay_flag_second_call_one_audit() -> None:
     async def main() -> None:
         c = build_slice1_composition()
         cid = new_correlation_id()
@@ -60,6 +60,8 @@ def test_facade_duplicate_raw_start_same_rendered_one_audit() -> None:
         p1 = await handle_slice1_telegram_update_to_rendered_message(raw, c, correlation_id=cid)
         p2 = await handle_slice1_telegram_update_to_rendered_message(raw, c, correlation_id=cid)
         assert p1.message_text == p2.message_text
+        assert p1.replay_suppresses_outbound is False
+        assert p2.replay_suppresses_outbound is True
         assert p1.correlation_id == p2.correlation_id == cid
         assert len(await c.audit.recorded_events()) == 1
 

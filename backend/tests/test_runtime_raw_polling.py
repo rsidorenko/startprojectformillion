@@ -119,14 +119,15 @@ def test_one_raw_start_fetch_bridge_send_count_one() -> None:
     _run(main())
 
 
-def test_duplicate_start_same_update_id_batch_two_sends_one_audit() -> None:
+def test_duplicate_start_same_update_id_batch_one_send_one_audit() -> None:
     async def main() -> None:
         c = build_slice1_composition()
         raw = _update(update_id=5, message=_base_message(user_id=42, text="/start"))
         client = FakeTelegramRawPollingClient(fetch_queue=[raw, raw])
         rt = Slice1RawPollingRuntime(c, client, _identity_bridge)
         r = await rt.poll_once(correlation_id=new_correlation_id())
-        assert r.send_count == 2
+        assert r.send_count == 1
+        assert r.noop_count == 1
         assert len(await c.audit.recorded_events()) == 1
 
     _run(main())
@@ -141,7 +142,8 @@ def test_duplicate_start_two_poll_once_one_audit() -> None:
         cid = new_correlation_id()
         r1 = await rt.poll_once(correlation_id=cid)
         r2 = await rt.poll_once(correlation_id=cid)
-        assert r1.send_count == 1 and r2.send_count == 1
+        assert r1.send_count == 1 and r1.noop_count == 0
+        assert r2.send_count == 0 and r2.noop_count == 1
         assert len(await c.audit.recorded_events()) == 1
 
     _run(main())
@@ -273,17 +275,25 @@ def test_fake_raw_client_satisfies_protocol() -> None:
 
 def test_success_maps_bound_counters_and_zero_fetch_failure() -> None:
     async def main() -> None:
-        c = build_slice1_composition()
         u1 = _update(update_id=1, message=_base_message(text="/start"))
         u2 = _update(update_id=2, message=_base_message(user_id=7, text="/start"))
-        client = FakeTelegramRawPollingClient(fetch_queue=[u1, u2])
-        rt = Slice1RawPollingRuntime(c, client, _identity_bridge)
-        r = await rt.poll_once()
-        br = await process_raw_updates_with_bridge(rt._inner, [u1, u2], _identity_bridge)
+        c_poll = build_slice1_composition()
+        client_poll = FakeTelegramRawPollingClient(fetch_queue=[u1, u2])
+        rt_poll = Slice1RawPollingRuntime(c_poll, client_poll, _identity_bridge)
+        r = await rt_poll.poll_once()
+
+        c_bound = build_slice1_composition()
+        rt_bound = Slice1RawPollingRuntime(
+            c_bound,
+            FakeTelegramRawPollingClient(fetch_queue=[]),
+            _identity_bridge,
+        )
+        br = await process_raw_updates_with_bridge(rt_bound._inner, [u1, u2], _identity_bridge)
         assert r.fetch_failure_count == 0
         assert r.raw_received_count == br.raw_received_count
         assert r.bridge_accepted_count == br.bridge_accepted_count
         assert r.send_count == br.send_count
+        assert r.noop_count == br.noop_count
 
     _run(main())
 

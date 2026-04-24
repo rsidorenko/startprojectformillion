@@ -58,6 +58,7 @@ class TelegramOutboundPlan:
     next_action_key: str | None
     keyboard_marker: str
     correlation_id: str
+    replay_suppresses_outbound: bool = False
 
 
 def _error_plan(
@@ -70,6 +71,7 @@ def _error_plan(
         next_action_key=None,
         keyboard_marker=OutboundKeyboardMarker.NONE.value,
         correlation_id=correlation_id,
+        replay_suppresses_outbound=False,
     )
 
 
@@ -80,8 +82,8 @@ def _service_unavailable_plan(correlation_id: str) -> TelegramOutboundPlan:
 def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> TelegramOutboundPlan:
     """Map a transport-safe response to a Telegram outbound plan (keys only).
 
-    Bootstrap success and idempotent replay success are indistinguishable: both yield
-    the same plan when ``TransportSafeResponse`` matches UC-01 success mapping.
+    UC-01 bootstrap replay sets ``replay_suppresses_outbound`` on the plan so runtime can
+    skip a duplicate user-visible send for the same Telegram ``update_id``.
 
     Unknown or inconsistent codes are mapped to a generic safe outage class (fail-closed).
     """
@@ -97,6 +99,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 next_action_key=None,
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,
+                replay_suppresses_outbound=transport.replay_suppresses_outbound,
             )
         if code == TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value:
             return TelegramOutboundPlan(

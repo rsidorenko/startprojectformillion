@@ -35,7 +35,9 @@ def test_bootstrap_success_maps_to_identity_ready() -> None:
         code=TransportBootstrapCode.IDENTITY_READY.value,
         correlation_id=cid,
         next_action_hint=None,
+        replay_suppresses_outbound=False,
     )
+    assert r.replay_suppresses_outbound is False
 
 
 def test_bootstrap_idempotent_replay_same_as_success() -> None:
@@ -52,6 +54,7 @@ def test_bootstrap_idempotent_replay_same_as_success() -> None:
     assert r.category is TransportResponseCategory.SUCCESS
     assert r.code == TransportBootstrapCode.IDENTITY_READY.value
     assert r.correlation_id == cid
+    assert r.replay_suppresses_outbound is True
 
 
 def test_bootstrap_validation_failure_maps_to_error_only() -> None:
@@ -111,6 +114,7 @@ def test_status_inactive_snapshot_fail_closed() -> None:
     )
     assert r.category is TransportResponseCategory.SUCCESS
     assert r.code == "inactive_or_not_eligible"
+    assert r.replay_suppresses_outbound is False
 
 
 def test_transport_response_has_no_outcome_or_internal_fields() -> None:
@@ -125,7 +129,13 @@ def test_transport_response_has_no_outcome_or_internal_fields() -> None:
         ),
     )
     field_names = {f.name for f in fields(TransportSafeResponse)}
-    assert field_names == {"category", "code", "correlation_id", "next_action_hint"}
+    assert field_names == {
+        "category",
+        "code",
+        "correlation_id",
+        "next_action_hint",
+        "replay_suppresses_outbound",
+    }
 
 
 def test_correlation_id_preserved() -> None:

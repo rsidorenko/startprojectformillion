@@ -227,7 +227,7 @@ def test_poll_once_empty_fetch_ok() -> None:
     _run(main())
 
 
-def test_two_poll_once_same_update_two_sends_one_audit() -> None:
+def test_two_poll_once_same_update_replay_second_noop_one_audit() -> None:
     raw = _update(update_id=5, message=_base_message(user_id=42, text="/start"))
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -247,7 +247,8 @@ def test_two_poll_once_same_update_two_sends_one_audit() -> None:
             cid = new_correlation_id()
             r1 = await proc.poll_once(correlation_id=cid)
             r2 = await proc.poll_once(correlation_id=cid)
-            assert r1.send_count == 1 and r2.send_count == 1
+            assert r1.send_count == 1 and r1.noop_count == 0
+            assert r2.send_count == 0 and r2.noop_count == 1
             assert len(await proc.app.bundle.bundle.composition.audit.recorded_events()) == 1
             await proc.aclose()
 

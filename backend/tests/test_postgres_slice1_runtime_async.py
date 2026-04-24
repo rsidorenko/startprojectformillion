@@ -229,10 +229,12 @@ def test_postgres_slice1_async_runtime_same_start_update_replay_idempotent(
                     assert s1.fetch_failure_count == 0
                     assert s1.send_failure_count == 0
                     assert s1.send_count == 1
+                    assert s1.noop_count == 0
                     assert s2.fetch_failure_count == 0
                     assert s2.send_failure_count == 0
-                    assert s2.send_count == 1
-                    assert send_posts == 2
+                    assert s2.send_count == 0
+                    assert s2.noop_count == 1
+                    assert send_posts == 1
 
                     vconn = await asyncpg.connect(pg_url)
                     try:

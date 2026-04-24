@@ -89,6 +89,14 @@ async def handle_slice1_telegram_update_to_runtime_action(
     )
     cid = rendered.correlation_id
     target = extract_eligible_private_chat_id_from_telegram_like_update(update)
+    if rendered.replay_suppresses_outbound:
+        return TelegramRuntimeAction(
+            kind=TelegramRuntimeActionKind.NOOP,
+            correlation_id=cid,
+            chat_id=None,
+            message_text=None,
+            action_keys=(),
+        )
     if target is None or not rendered.message_text.strip():
         return TelegramRuntimeAction(
             kind=TelegramRuntimeActionKind.NOOP,

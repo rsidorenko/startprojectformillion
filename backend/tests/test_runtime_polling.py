@@ -91,7 +91,13 @@ def test_polling_batch_one_start_one_send() -> None:
     _run(main())
 
 
-def test_duplicate_start_same_update_id_two_sends_one_audit() -> None:
+def test_duplicate_start_same_update_id_one_send_one_audit() -> None:
+    """Duplicate identical update in one batch: one user-visible send, one UC-01 audit.
+
+    Outbound suppress-send on idempotent replay does **not** fix the case where the first
+    Telegram send failed after persistence commit but before delivery; that needs a
+    send-ledger / delivery-ledger (non-goal for this slice).
+    """
     async def main() -> None:
         c = build_slice1_composition()
         client = FakeTelegramPollingClient()
@@ -99,8 +105,8 @@ def test_duplicate_start_same_update_id_two_sends_one_audit() -> None:
         rt = Slice1PollingRuntime(c, client)
         raw = _update(update_id=5, message=_base_message(user_id=42, text="/start"))
         r = await rt.process_batch([raw, raw], correlation_id=cid)
-        assert r.send_count == 2
-        assert r.noop_count == 0
+        assert r.send_count == 1
+        assert r.noop_count == 1
         assert len(await c.audit.recorded_events()) == 1
 
     _run(main())
@@ -208,7 +214,8 @@ def test_process_single_update_delegates_to_batch() -> None:
         r1 = await rt.process_single_update(raw, correlation_id=cid)
         r2 = await rt.process_batch([raw], correlation_id=cid)
         assert r1.received_count == 1 and r2.received_count == 1
-        assert r1.send_count == r2.send_count == 1
+        assert r1.send_count == 1 and r1.noop_count == 0
+        assert r2.send_count == 0 and r2.noop_count == 1
 
     _run(main())
 
@@ -260,7 +267,7 @@ def test_poll_once_start_one_send() -> None:
     _run(main())
 
 
-def test_poll_once_duplicate_start_two_sends_one_audit() -> None:
+def test_poll_once_duplicate_start_replay_second_poll_noop_one_audit() -> None:
     async def main() -> None:
         c = build_slice1_composition()
         raw = _update(update_id=5, message=_base_message(user_id=42, text="/start"))
@@ -269,7 +276,8 @@ def test_poll_once_duplicate_start_two_sends_one_audit() -> None:
         cid = new_correlation_id()
         r1 = await rt.poll_once(correlation_id=cid)
         r2 = await rt.poll_once(correlation_id=cid)
-        assert r1.send_count == 1 and r2.send_count == 1
+        assert r1.send_count == 1 and r1.noop_count == 0
+        assert r2.send_count == 0 and r2.noop_count == 1
         assert len(await c.audit.recorded_events()) == 1
 
     _run(main())

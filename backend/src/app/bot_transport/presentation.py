@@ -48,6 +48,8 @@ class TransportSafeResponse:
     code: str
     correlation_id: str
     next_action_hint: str | None = None
+    #: UC-01 only: same Telegram update replay handled idempotently; runtime may skip duplicate send.
+    replay_suppresses_outbound: bool = False
 
 
 def _error_code_from_user_safe(code: UserSafeErrorCode | None) -> str:
@@ -72,6 +74,7 @@ def _transport_error(
         code=_error_code_from_user_safe(user_safe),
         correlation_id=correlation_id,
         next_action_hint=None,
+        replay_suppresses_outbound=False,
     )
 
 
@@ -84,7 +87,7 @@ def _status_code_for_safe_category(status: SafeUserStatusCategory) -> str:
 
 
 def map_bootstrap_identity_to_transport(result: BootstrapIdentityResult) -> TransportSafeResponse:
-    """Map UC-01 result to transport-safe response; idempotent replay uses the same success path."""
+    """Map UC-01 result to transport-safe response; replay shares success codes but may suppress outbound."""
     cid = result.correlation_id
     if result.outcome is OperationOutcomeCategory.SUCCESS:
         return TransportSafeResponse(
@@ -92,6 +95,7 @@ def map_bootstrap_identity_to_transport(result: BootstrapIdentityResult) -> Tran
             code=TransportBootstrapCode.IDENTITY_READY.value,
             correlation_id=cid,
             next_action_hint=None,
+            replay_suppresses_outbound=result.idempotent_replay,
         )
     return _transport_error(TransportResponseCategory.ERROR, result.user_safe, cid)
 
@@ -109,6 +113,7 @@ def map_get_subscription_status_to_transport(
             code=_status_code_for_safe_category(result.safe_status),
             correlation_id=cid,
             next_action_hint=None,
+            replay_suppresses_outbound=False,
         )
 
     if oc is OperationOutcomeCategory.NOT_FOUND:
@@ -117,6 +122,7 @@ def map_get_subscription_status_to_transport(
             code=TransportStatusCode.NEEDS_ONBOARDING.value,
             correlation_id=cid,
             next_action_hint=TransportNextActionHint.COMPLETE_BOOTSTRAP.value,
+            replay_suppresses_outbound=False,
         )
 
     return _transport_error(TransportResponseCategory.ERROR, result.user_safe, cid)

@@ -237,7 +237,7 @@ def test_one_iteration_start_one_send() -> None:
     asyncio.run(main())
 
 
-def test_two_iterations_same_start_two_sends_one_audit() -> None:
+def test_two_iterations_same_start_replay_second_noop_one_audit() -> None:
     send_posts = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -259,8 +259,9 @@ def test_two_iterations_same_start_two_sends_one_audit() -> None:
             cid = new_correlation_id()
             s1 = await b.bundle.live_loop.run_until_stopped(ctrl, correlation_id=cid, max_iterations=1)
             s2 = await b.bundle.live_loop.run_until_stopped(ctrl, correlation_id=cid, max_iterations=1)
-            assert s1.send_count == 1 and s2.send_count == 1
-            assert send_posts == 2
+            assert s1.send_count == 1 and s1.noop_count == 0
+            assert s2.send_count == 0 and s2.noop_count == 1
+            assert send_posts == 1
             events = await b.bundle.composition.audit.recorded_events()
             assert len(events) == 1
             await b.aclose()
