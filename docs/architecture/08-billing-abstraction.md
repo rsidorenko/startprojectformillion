@@ -407,6 +407,7 @@ Out of scope:
 - **Billing ledger**: append-only журнал принятых внешних фактов.
 - **Subscription state**: mutable текущая доменная интерпретация.
 - Ledger может “содержать больше”, чем применено; application отвечает за “applied or quarantined”.
+- Bounded design UC-05 (внутренний post-accept apply к `subscription_snapshots`, идентификаторы входа, идемпотентность, fail-closed) зафиксирован в [30-uc-05-apply-billing-fact-to-subscription.md](30-uc-05-apply-billing-fact-to-subscription.md).
 
 #### Quarantine/mismatch expectations
 

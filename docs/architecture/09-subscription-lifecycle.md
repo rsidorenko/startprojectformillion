@@ -296,6 +296,7 @@ Issuance — **операционный side-effect**, зависят от entit
 - Accepted billing facts — **основной вход** для перевода lifecycle из ожидания оплаты в подтверждённые состояния.
 - Эти факты — **не** “финальная внутренняя истина” сами по себе: apply должен сопоставить факты с пользователем/планом/периодом и доменными правилами.
 - Reconciliation **не** делает прямой overwrite: она производит **дополнительные accepted facts** или выявляет mismatch → `needs_review`.
+- Детализация apply accepted billing fact к snapshot/lifecycle: [30-uc-05-apply-billing-fact-to-subscription.md](30-uc-05-apply-billing-fact-to-subscription.md).
 
 ---
 
