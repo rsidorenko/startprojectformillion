@@ -4,15 +4,28 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - ".github/workflows/backend-postgres-mvp-smoke-validation.yml"
+      - "backend/pyproject.toml"
+      - "backend/src/**"
+      - "backend/tests/**"
       - "backend/scripts/run_postgres_mvp_smoke_local.py"
       - "backend/scripts/run_postgres_mvp_smoke.py"
-      - "backend/tests/test_run_postgres_mvp_smoke_local.py"
-      - "backend/tests/test_run_postgres_mvp_smoke.py"
-      - "backend/tests/test_run_slice1_retention_dry_run.py"
-      - "backend/docker-compose.postgres-smoke.yml"
+      - "backend/scripts/run_slice1_retention_dry_run.py"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
-      - "backend/pyproject.toml"
+      - "backend/docker-compose.postgres-smoke.yml"
+  push:
+    branches:
+      - "main"
+    paths:
       - ".github/workflows/backend-postgres-mvp-smoke-validation.yml"
+      - "backend/pyproject.toml"
+      - "backend/src/**"
+      - "backend/tests/**"
+      - "backend/scripts/run_postgres_mvp_smoke_local.py"
+      - "backend/scripts/run_postgres_mvp_smoke.py"
+      - "backend/scripts/run_slice1_retention_dry_run.py"
+      - "backend/docs/postgres_mvp_smoke_runbook.md"
+      - "backend/docker-compose.postgres-smoke.yml"
 
 jobs:
   slice1-postgres-mvp-smoke:

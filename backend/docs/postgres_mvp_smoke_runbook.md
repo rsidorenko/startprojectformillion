@@ -56,6 +56,8 @@ docker compose -p <project-name> -f docker-compose.postgres-smoke.yml down --vol
 ## CI validation
 Use this path to verify reproducibility in Docker-enabled CI without any manual external `DATABASE_URL`.
 Workflow expects Docker Engine + Docker Compose to be available on the selected CI runner image.
+Workflow `backend-postgres-mvp-smoke-validation` now runs automatically on push to `main` when relevant backend/CI paths change.
+Manual `workflow_dispatch` is still available as a fallback trigger.
 
 Expected CI commands (from `backend`):
 
@@ -71,6 +73,7 @@ Notes:
 - CI path uses disposable local Docker PostgreSQL through `scripts/run_postgres_mvp_smoke_local.py`.
 - Local runner sets local-only `DATABASE_URL` and mutating-test opt-in guard automatically for child smoke.
 - Do not replace this with manual external `DATABASE_URL` smoke in CI.
+- Cursor-driven manual dispatch still requires installed/authenticated `gh`, but normal push-triggered CI does not require local `gh`.
 - Workflow publishes artifact `backend-postgres-mvp-smoke-validation-reports` from `backend/.test-reports`.
 - Artifact includes:
   - `backend-smoke-helper-regression.xml` (JUnit for helper regression);
