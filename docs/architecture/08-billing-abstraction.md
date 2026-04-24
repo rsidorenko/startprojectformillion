@@ -512,6 +512,7 @@ Billing abstraction **запрещено**:
   - reconciliation started/completed,
   - triage actions (если есть).
 - **Internal normalized ingestion (без public webhook)**: append-only `billing_ingestion_audit_events` фиксирует факт приёма в `billing_events_ledger` (нормализованные поля, outcome `accepted` / `idempotent_replay`); **без** raw provider JSON, заголовков и подписей. Это **не** `slice1_audit_events` (отдельный ретеншен/граница).
+- Retention policy для `billing_ingestion_audit_events` **отдельна** от slice-1 retention: см. [ADR: billing ingestion audit retention](../../backend/docs/adr_billing_ingestion_audit_retention.md). Числовой TTL **не** зафиксирован; будущий cleanup-джоб (вне scope этого документа) должен следовать этому ADR после product/finance/legal sign-off.
 - Audit **не** хранит raw payload и **не** содержит секреты; только internal ids + external refs + reason codes.
 
 #### PII minimization boundaries
@@ -568,7 +569,7 @@ Billing abstraction **запрещено**:
   - out-of-order conflicts,
   - suspicious frequency/amount anomalies (концептуально).
 - Требуется ли аудит admin read-only (просмотра quarantine) в MVP, или достаточно метрик?
-- Политика retention для billing ledger facts и quarantine records (без raw payload) в MVP.
+- Политика retention для billing ledger facts, quarantine records, и (отдельно) append-only `billing_ingestion_audit_events` (число дней/месяцев TBD) — ориентир: [ADR billing ingestion audit retention](../../backend/docs/adr_billing_ingestion_audit_retention.md) для audit-таблицы; ledger/quarantine в MVP.
 
 ---
 
