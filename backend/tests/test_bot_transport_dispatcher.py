@@ -1,0 +1,167 @@
+"""Pure in-memory tests for slice-1 transport dispatcher (no Telegram SDK, no runtime)."""
+
+from __future__ import annotations
+
+import asyncio
+import inspect
+
+from app.application.bootstrap import build_slice1_composition
+from app.bot_transport.dispatcher import Slice1Dispatcher, dispatch_slice1_transport
+from app.bot_transport.normalized import TransportIncomingEnvelope
+from app.bot_transport.presentation import (
+    TransportBootstrapCode,
+    TransportErrorCode,
+    TransportNextActionHint,
+    TransportResponseCategory,
+    TransportStatusCode,
+)
+from app.shared.correlation import new_correlation_id
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+def _env(
+    *,
+    cid: str,
+    uid: int = 100,
+    update_id: int | None = 1,
+    text: str = "/start",
+) -> TransportIncomingEnvelope:
+    return TransportIncomingEnvelope(
+        telegram_user_id=uid,
+        correlation_id=cid,
+        telegram_update_id=update_id,
+        normalized_command_text=text,
+    )
+
+
+def test_dispatch_start_bootstrap_success() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        r = await dispatch_slice1_transport(_env(cid=cid, text="/start"), c)
+        assert r.category is TransportResponseCategory.SUCCESS
+        assert r.code == TransportBootstrapCode.IDENTITY_READY.value
+        assert r.correlation_id == cid
+
+    _run(main())
+
+
+def test_dispatch_duplicate_start_idempotent_same_success_no_extra_audit() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        e = _env(cid=cid, uid=42, update_id=5, text="/start")
+        r1 = await dispatch_slice1_transport(e, c)
+        r2 = await dispatch_slice1_transport(e, c)
+        assert r1.category is r2.category is TransportResponseCategory.SUCCESS
+        assert r1.code == r2.code == TransportBootstrapCode.IDENTITY_READY.value
+        events = await c.audit.recorded_events()
+        assert len(events) == 1
+
+    _run(main())
+
+
+def test_dispatch_status_bootstrapped_no_snapshot_fail_closed() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        uid = 77
+        await dispatch_slice1_transport(_env(cid=cid, uid=uid, update_id=2, text="/start"), c)
+        r = await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
+        assert r.category is TransportResponseCategory.SUCCESS
+        assert r.code == TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value
+        assert r.correlation_id == cid
+
+    _run(main())
+
+
+def test_dispatch_status_unknown_user_onboarding_guidance() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        r = await dispatch_slice1_transport(_env(cid=cid, uid=999, text="/status"), c)
+        assert r.category is TransportResponseCategory.GUIDANCE
+        assert r.code == TransportStatusCode.NEEDS_ONBOARDING.value
+        assert r.next_action_hint == TransportNextActionHint.COMPLETE_BOOTSTRAP.value
+        assert r.correlation_id == cid
+
+    _run(main())
+
+
+def test_dispatch_unknown_command_no_handler_invocation() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        r = await dispatch_slice1_transport(_env(cid=cid, text="/nope"), c)
+        assert r.category is TransportResponseCategory.ERROR
+        assert r.code == TransportErrorCode.INVALID_INPUT.value
+        assert len(await c.audit.recorded_events()) == 0
+
+    _run(main())
+
+
+def test_dispatch_invalid_telegram_user_id_rejected() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        r = await dispatch_slice1_transport(_env(cid=cid, uid=0, text="/status"), c)
+        assert r.category is TransportResponseCategory.ERROR
+        assert r.code == TransportErrorCode.INVALID_INPUT.value
+
+    _run(main())
+
+
+def test_dispatch_missing_bootstrap_update_id_rejected() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        r = await dispatch_slice1_transport(
+            TransportIncomingEnvelope(
+                telegram_user_id=10,
+                correlation_id=cid,
+                telegram_update_id=None,
+                normalized_command_text="/start",
+            ),
+            c,
+        )
+        assert r.category is TransportResponseCategory.ERROR
+        assert r.code == TransportErrorCode.INVALID_INPUT.value
+        assert len(await c.audit.recorded_events()) == 0
+
+    _run(main())
+
+
+def test_correlation_id_preserved_on_success_and_reject() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        ok = await dispatch_slice1_transport(_env(cid=cid, text="/start"), c)
+        assert ok.correlation_id == cid
+        bad = await dispatch_slice1_transport(_env(cid=cid, text="/unknown"), c)
+        assert bad.correlation_id == cid
+
+    _run(main())
+
+
+def test_slice1_dispatcher_class_delegates() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        d = Slice1Dispatcher(c)
+        r = await d.dispatch(_env(cid=cid, text="/status"))
+        assert r.correlation_id == cid
+
+    _run(main())
+
+
+def test_dispatcher_module_excludes_billing_issuance_admin_concepts() -> None:
+    import app.bot_transport.dispatcher as d
+
+    src = inspect.getsource(d)
+    lower = src.lower()
+    assert "billing" not in lower
+    assert "issuance" not in lower
+    assert "admin" not in lower

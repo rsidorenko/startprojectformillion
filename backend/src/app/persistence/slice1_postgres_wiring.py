@@ -1,0 +1,56 @@
+"""Opt-in slice-1 PostgreSQL composition helpers (pool lifecycle owned by caller / bundle)."""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Awaitable, Callable
+
+import asyncpg
+
+from app.application.bootstrap import Slice1Composition, build_slice1_composition
+from app.persistence.postgres_audit import PostgresAuditAppender
+from app.persistence.postgres_idempotency import PostgresIdempotencyRepository
+from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
+from app.persistence.postgres_user_identity import PostgresUserIdentityRepository
+from app.security.config import ConfigurationError, RuntimeConfig
+
+Slice1PostgresPoolOpener = Callable[[str], Awaitable[asyncpg.Pool]]
+
+
+def slice1_postgres_repos_requested() -> bool:
+    raw = os.environ.get("SLICE1_USE_POSTGRES_REPOS", "").strip().lower()
+    return raw in ("1", "true", "yes")
+
+
+async def _default_open_pool(dsn: str) -> asyncpg.Pool:
+    return await asyncpg.create_pool(dsn, min_size=1, max_size=4)
+
+
+async def resolve_slice1_composition_for_runtime(
+    config: RuntimeConfig,
+    *,
+    open_pool: Slice1PostgresPoolOpener | None = None,
+) -> tuple[Slice1Composition, asyncpg.Pool | None]:
+    """
+    Return slice-1 composition and optional asyncpg pool to close.
+
+    When SLICE1_USE_POSTGRES_REPOS is unset/false, always in-memory (no pool).
+    When enabled, requires a non-empty postgres config.database_url; pool open failures propagate.
+    """
+    if not slice1_postgres_repos_requested():
+        return build_slice1_composition(), None
+
+    dsn = (config.database_url or "").strip()
+    if not dsn:
+        raise ConfigurationError("missing or empty configuration: DATABASE_URL")
+
+    opener = open_pool or _default_open_pool
+    pool = await opener(dsn)
+
+    composition = build_slice1_composition(
+        identity=PostgresUserIdentityRepository(pool),
+        idempotency=PostgresIdempotencyRepository(pool),
+        snapshots=PostgresSubscriptionSnapshotReader(pool),
+        audit=PostgresAuditAppender(pool),
+    )
+    return composition, pool

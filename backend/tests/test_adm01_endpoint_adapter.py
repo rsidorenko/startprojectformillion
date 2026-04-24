@@ -1,0 +1,437 @@
+"""ADM-01 thin transport adapter tests (fake handler; no network/DB)."""
+
+from __future__ import annotations
+
+import asyncio
+
+from app.admin_support.adm01_endpoint import Adm01InboundRequest, execute_adm01_endpoint
+from app.admin_support.principal_extraction import DefaultInternalAdminPrincipalExtractor
+from app.admin_support.contracts import (
+    AdminActorRef,
+    AdminPolicyFlag,
+    Adm01LookupInput,
+    Adm01LookupOutcome,
+    Adm01LookupResult,
+    Adm01LookupSummary,
+    Adm01SubscriptionStatusSummary,
+    EntitlementSummary,
+    EntitlementSummaryCategory,
+    InternalAdminPrincipalExtractionInput,
+    InternalAdminPrincipalExtractionOutcome,
+    InternalAdminPrincipalExtractionResult,
+    InternalUserTarget,
+    IssuanceOperationalState,
+    IssuanceOperationalSummary,
+    RedactionMarker,
+    TelegramUserTarget,
+)
+from app.application.interfaces import SubscriptionSnapshot
+from app.shared.correlation import new_correlation_id
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+def _req(
+    *,
+    cid: str | None = None,
+    internal_admin_principal_id: str = "adm-test",
+    internal_user_id: str | None = None,
+    telegram_user_id: int | None = None,
+) -> Adm01InboundRequest:
+    return Adm01InboundRequest(
+        correlation_id=cid if cid is not None else new_correlation_id(),
+        internal_admin_principal_id=internal_admin_principal_id,
+        internal_user_id=internal_user_id,
+        telegram_user_id=telegram_user_id,
+    )
+
+
+def _lookup_result(
+    outcome: Adm01LookupOutcome,
+    correlation_id: str,
+    *,
+    summary: Adm01LookupSummary | None = None,
+) -> Adm01LookupResult:
+    return Adm01LookupResult(outcome=outcome, correlation_id=correlation_id, summary=summary)
+
+
+def _success_result(cid: str) -> Adm01LookupResult:
+    return Adm01LookupResult(
+        outcome=Adm01LookupOutcome.SUCCESS,
+        correlation_id=cid,
+        summary=Adm01LookupSummary(
+            subscription=Adm01SubscriptionStatusSummary(
+                snapshot=SubscriptionSnapshot(internal_user_id="u-1", state_label="active"),
+            ),
+            entitlement=EntitlementSummary(category=EntitlementSummaryCategory.ACTIVE),
+            policy_flag=AdminPolicyFlag.DEFAULT,
+            issuance=IssuanceOperationalSummary(state=IssuanceOperationalState.OK),
+            redaction=RedactionMarker.NONE,
+        ),
+    )
+
+
+class _RecordingHandler:
+    def __init__(self, result: Adm01LookupResult) -> None:
+        self._result = result
+        self.last_inp: Adm01LookupInput | None = None
+
+    async def handle(self, inp: Adm01LookupInput) -> Adm01LookupResult:
+        self.last_inp = inp
+        return self._result
+
+
+class _NeverCalledHandler:
+    async def handle(self, inp: Adm01LookupInput) -> Adm01LookupResult:
+        raise AssertionError("handler must not be called")
+
+
+class _ExplodingHandler:
+    async def handle(self, inp: Adm01LookupInput) -> Adm01LookupResult:
+        raise RuntimeError("must not surface")
+
+
+class _SuccessExtractor:
+    def __init__(self, actor_id: str = "adm-extracted") -> None:
+        self._actor = AdminActorRef(internal_admin_principal_id=actor_id)
+
+    async def extract_trusted_internal_admin_principal(
+        self,
+        inp: InternalAdminPrincipalExtractionInput,
+    ) -> InternalAdminPrincipalExtractionResult:
+        return InternalAdminPrincipalExtractionResult(
+            outcome=InternalAdminPrincipalExtractionOutcome.SUCCESS,
+            principal=self._actor,
+        )
+
+
+class _NonSuccessExtractor:
+    def __init__(self, outcome: InternalAdminPrincipalExtractionOutcome) -> None:
+        self._outcome = outcome
+
+    async def extract_trusted_internal_admin_principal(
+        self,
+        inp: InternalAdminPrincipalExtractionInput,
+    ) -> InternalAdminPrincipalExtractionResult:
+        return InternalAdminPrincipalExtractionResult(outcome=self._outcome, principal=None)
+
+
+class _ExplodingExtractor:
+    async def extract_trusted_internal_admin_principal(
+        self,
+        inp: InternalAdminPrincipalExtractionInput,
+    ) -> InternalAdminPrincipalExtractionResult:
+        raise RuntimeError("extractor failure")
+
+
+def test_endpoint_with_real_extractor_trims_principal_and_calls_handler() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _RecordingHandler(_success_result(cid))
+        r = await execute_adm01_endpoint(
+            h,
+            DefaultInternalAdminPrincipalExtractor(),
+            _req(
+                cid=cid,
+                internal_admin_principal_id="  adm-trimmed  ",
+                internal_user_id="u-42",
+            ),
+        )
+        assert h.last_inp is not None
+        assert h.last_inp.actor == AdminActorRef(internal_admin_principal_id="adm-trimmed")
+        assert h.last_inp.target == InternalUserTarget(internal_user_id="u-42")
+        assert r.outcome == Adm01LookupOutcome.SUCCESS.value
+
+    _run(main())
+
+
+def test_endpoint_with_real_extractor_blank_principal_returns_invalid_input() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        r = await execute_adm01_endpoint(
+            _NeverCalledHandler(),
+            DefaultInternalAdminPrincipalExtractor(),
+            _req(cid=cid, internal_admin_principal_id="   ", internal_user_id="u-1"),
+        )
+        assert r.outcome == Adm01LookupOutcome.INVALID_INPUT.value
+        assert r.correlation_id == cid
+        assert r.summary is None
+
+    _run(main())
+
+
+def test_endpoint_with_real_extractor_tab_newline_principal_returns_invalid_input() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        r = await execute_adm01_endpoint(
+            _NeverCalledHandler(),
+            DefaultInternalAdminPrincipalExtractor(),
+            _req(cid=cid, internal_admin_principal_id="\t\n", internal_user_id="u-1"),
+        )
+        assert r.outcome == Adm01LookupOutcome.INVALID_INPUT.value
+        assert r.correlation_id == cid
+        assert r.summary is None
+
+    _run(main())
+
+
+def test_endpoint_invalid_internal_admin_principal_id_never_calls_handler() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _NeverCalledHandler()
+        for principal in ("", "   ", "\t"):
+            r = await execute_adm01_endpoint(
+                h,
+                _NonSuccessExtractor(InternalAdminPrincipalExtractionOutcome.MALFORMED_PRINCIPAL),
+                _req(cid=cid, internal_admin_principal_id=principal, internal_user_id="u-1"),
+            )
+            assert r.outcome == Adm01LookupOutcome.INVALID_INPUT.value
+            assert r.summary is None
+
+    _run(main())
+
+
+def test_endpoint_invalid_telegram_user_id_never_calls_handler() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _NeverCalledHandler()
+        for tg in (0, -1, True):
+            r = await execute_adm01_endpoint(
+                h,
+                _SuccessExtractor(),
+                _req(cid=cid, telegram_user_id=tg),  # type: ignore[arg-type]
+            )
+            assert r.outcome == Adm01LookupOutcome.INVALID_INPUT.value
+            assert r.summary is None
+
+    _run(main())
+
+
+def test_endpoint_invalid_internal_user_id_format_never_calls_handler() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _NeverCalledHandler()
+        for uid in ("", "  u-1  "):
+            r = await execute_adm01_endpoint(h, _SuccessExtractor(), _req(cid=cid, internal_user_id=uid))
+            assert r.outcome == Adm01LookupOutcome.INVALID_INPUT.value
+            assert r.summary is None
+
+    _run(main())
+
+
+def test_endpoint_handler_exception_maps_to_dependency_failure_safe_response() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        r = await execute_adm01_endpoint(
+            _ExplodingHandler(),
+            _SuccessExtractor(),
+            _req(cid=cid, internal_user_id="u-ok"),
+        )
+        assert r.outcome == Adm01LookupOutcome.DEPENDENCY_FAILURE.value
+        assert r.correlation_id == cid
+        assert r.summary is None
+
+    _run(main())
+
+
+def test_endpoint_invalid_input_preserves_request_correlation_id() -> None:
+    raw_cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _NeverCalledHandler()
+        r = await execute_adm01_endpoint(
+            h,
+            _NonSuccessExtractor(InternalAdminPrincipalExtractionOutcome.MISSING_PRINCIPAL),
+            _req(cid=raw_cid, internal_admin_principal_id="", internal_user_id="u-1"),
+        )
+        assert r.correlation_id == raw_cid
+        assert r.outcome == Adm01LookupOutcome.INVALID_INPUT.value
+
+    _run(main())
+
+
+def test_endpoint_internal_user_id_normalized_target() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        extracted_actor_id = "adm-normalized"
+        h = _RecordingHandler(_success_result(cid))
+        r = await execute_adm01_endpoint(
+            h,
+            _SuccessExtractor(actor_id=extracted_actor_id),
+            _req(cid=cid, internal_user_id="u-42"),
+        )
+        assert h.last_inp is not None
+        assert h.last_inp.target == InternalUserTarget(internal_user_id="u-42")
+        assert h.last_inp.actor == AdminActorRef(internal_admin_principal_id=extracted_actor_id)
+        assert h.last_inp.correlation_id == cid
+        assert r.outcome == Adm01LookupOutcome.SUCCESS.value
+        assert r.summary is not None
+        assert r.summary.subscription_state_label == "active"
+
+    _run(main())
+
+
+def test_endpoint_telegram_user_id_normalized_target() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _RecordingHandler(_success_result(cid))
+        r = await execute_adm01_endpoint(h, _SuccessExtractor(), _req(cid=cid, telegram_user_id=424242))
+        assert h.last_inp is not None
+        assert h.last_inp.target == TelegramUserTarget(telegram_user_id=424242)
+        assert r.outcome == Adm01LookupOutcome.SUCCESS.value
+        assert r.summary is not None
+
+    _run(main())
+
+
+def test_endpoint_invalid_target_combination_safe_outcome() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _NeverCalledHandler()
+        r_none = await execute_adm01_endpoint(
+            h,
+            _SuccessExtractor(),
+            _req(cid=cid, internal_user_id=None, telegram_user_id=None),
+        )
+        assert r_none.outcome == Adm01LookupOutcome.INVALID_INPUT.value
+        r_both = await execute_adm01_endpoint(
+            h,
+            _SuccessExtractor(),
+            _req(cid=cid, internal_user_id="x", telegram_user_id=1),
+        )
+        assert r_both.outcome == Adm01LookupOutcome.INVALID_INPUT.value
+
+    _run(main())
+
+
+def test_endpoint_success_exposes_summary_shape() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _RecordingHandler(_success_result(cid))
+        r = await execute_adm01_endpoint(h, _SuccessExtractor(), _req(cid=cid, internal_user_id="u-1"))
+        assert r.correlation_id == cid
+        assert r.summary is not None
+        s = r.summary
+        assert s.internal_user_id == "u-1"
+        assert s.subscription_state_label == "active"
+        assert s.entitlement_category == EntitlementSummaryCategory.ACTIVE.value
+        assert s.policy_flag == AdminPolicyFlag.DEFAULT.value
+        assert s.issuance_state == IssuanceOperationalState.OK.value
+        assert s.redaction == RedactionMarker.NONE.value
+
+    _run(main())
+
+
+def test_endpoint_denied_passthrough_from_handler_result() -> None:
+    req_cid = new_correlation_id()
+    handler_cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _RecordingHandler(_lookup_result(Adm01LookupOutcome.DENIED, handler_cid))
+        r = await execute_adm01_endpoint(
+            h,
+            _SuccessExtractor(),
+            _req(cid=req_cid, internal_user_id="u-1"),
+        )
+        assert r.outcome == Adm01LookupOutcome.DENIED.value
+        assert r.summary is None
+        assert r.correlation_id == handler_cid
+
+    _run(main())
+
+
+def test_endpoint_target_not_resolved_passthrough_preserves_result_correlation_id() -> None:
+    req_cid = new_correlation_id()
+    handler_cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _RecordingHandler(_lookup_result(Adm01LookupOutcome.TARGET_NOT_RESOLVED, handler_cid))
+        r = await execute_adm01_endpoint(
+            h,
+            _SuccessExtractor(),
+            _req(cid=req_cid, telegram_user_id=99),
+        )
+        assert r.outcome == Adm01LookupOutcome.TARGET_NOT_RESOLVED.value
+        assert r.summary is None
+        assert r.correlation_id == handler_cid
+
+    _run(main())
+
+
+def test_endpoint_dependency_failure_result_passthrough_not_exception_path() -> None:
+    req_cid = new_correlation_id()
+    handler_cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _RecordingHandler(_lookup_result(Adm01LookupOutcome.DEPENDENCY_FAILURE, handler_cid))
+        r = await execute_adm01_endpoint(
+            h,
+            _SuccessExtractor(),
+            _req(cid=req_cid, internal_user_id="u-z"),
+        )
+        assert r.outcome == Adm01LookupOutcome.DEPENDENCY_FAILURE.value
+        assert r.summary is None
+        assert r.correlation_id == handler_cid
+
+    _run(main())
+
+
+def test_endpoint_success_without_summary_does_not_fabricate_summary() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        h = _RecordingHandler(_lookup_result(Adm01LookupOutcome.SUCCESS, cid, summary=None))
+        r = await execute_adm01_endpoint(
+            h,
+            _SuccessExtractor(),
+            _req(cid=cid, internal_user_id="u-1"),
+        )
+        assert r.outcome == Adm01LookupOutcome.SUCCESS.value
+        assert r.summary is None
+
+    _run(main())
+
+
+def test_endpoint_extractor_non_success_short_circuits_to_invalid_input() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        r = await execute_adm01_endpoint(
+            _NeverCalledHandler(),
+            _NonSuccessExtractor(InternalAdminPrincipalExtractionOutcome.UNTRUSTED_SOURCE),
+            _req(cid=cid, internal_user_id="u-1"),
+        )
+        assert r.outcome == Adm01LookupOutcome.INVALID_INPUT.value
+        assert r.correlation_id == cid
+        assert r.summary is None
+
+    _run(main())
+
+
+def test_endpoint_extractor_exception_short_circuits_to_dependency_failure() -> None:
+    cid = new_correlation_id()
+
+    async def main() -> None:
+        r = await execute_adm01_endpoint(
+            _NeverCalledHandler(),
+            _ExplodingExtractor(),
+            _req(cid=cid, internal_user_id="u-1"),
+        )
+        assert r.outcome == Adm01LookupOutcome.DEPENDENCY_FAILURE.value
+        assert r.correlation_id == cid
+        assert r.summary is None
+
+    _run(main())

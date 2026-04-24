@@ -1,0 +1,75 @@
+"""Minimal helper to smoke-check PostgreSQL MVP happy-path."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+
+
+_MUTATING_TESTS_GUARD_ENV = "SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS"
+_TRUTHY_ENV_VALUES = {"1", "true", "yes"}
+
+
+def _backend_dir() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _is_env_truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def _require_mutating_tests_opt_in() -> None:
+    if _is_env_truthy(os.environ.get(_MUTATING_TESTS_GUARD_ENV)):
+        return
+    raise RuntimeError(
+        f"{_MUTATING_TESTS_GUARD_ENV} must be explicitly set for isolated/dev DB smoke runs"
+    )
+
+
+def _build_child_env() -> dict[str, str]:
+    raw_database_url = os.environ.get("DATABASE_URL", "").strip()
+    if not raw_database_url:
+        raise RuntimeError("DATABASE_URL is required for PostgreSQL MVP smoke run")
+
+    child_env = os.environ.copy()
+    child_env["SLICE1_USE_POSTGRES_REPOS"] = "1"
+    if not child_env.get("BOT_TOKEN"):
+        child_env["BOT_TOKEN"] = "1234567890tok"
+    return child_env
+
+
+def main() -> None:
+    _require_mutating_tests_opt_in()
+    child_env = _build_child_env()
+    backend_dir = _backend_dir()
+
+    subprocess.run(
+        ["python", "-m", "app.persistence"],
+        cwd=backend_dir,
+        env=child_env,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "pytest",
+            "-q",
+            "tests/test_postgres_slice1_process_env_async.py",
+            "tests/test_postgres_migration_ledger_integration.py",
+        ],
+        cwd=backend_dir,
+        env=child_env,
+        check=True,
+    )
+    subprocess.run(
+        ["python", "scripts/run_slice1_retention_dry_run.py"],
+        cwd=backend_dir,
+        env=child_env,
+        check=True,
+    )
+
+
+if __name__ == "__main__":
+    main()

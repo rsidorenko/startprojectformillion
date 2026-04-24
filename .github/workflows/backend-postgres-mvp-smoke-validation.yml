@@ -1,0 +1,43 @@
+name: backend-postgres-mvp-smoke-validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "backend/scripts/run_postgres_mvp_smoke_local.py"
+      - "backend/scripts/run_postgres_mvp_smoke.py"
+      - "backend/tests/test_run_postgres_mvp_smoke_local.py"
+      - "backend/tests/test_run_postgres_mvp_smoke.py"
+      - "backend/tests/test_run_slice1_retention_dry_run.py"
+      - "backend/docker-compose.postgres-smoke.yml"
+      - "backend/docs/postgres_mvp_smoke_runbook.md"
+      - "backend/pyproject.toml"
+      - ".github/workflows/backend-postgres-mvp-smoke-validation.yml"
+
+jobs:
+  slice1-postgres-mvp-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: python -m pip install -e .[test]
+
+      - name: Check Docker and Compose
+        run: docker --version && docker compose version
+
+      - name: Run smoke helper unit regression
+        run: python -m pytest -q tests/test_run_postgres_mvp_smoke_local.py tests/test_run_postgres_mvp_smoke.py tests/test_run_slice1_retention_dry_run.py
+
+      - name: Run real local isolated PostgreSQL MVP smoke
+        run: python scripts/run_postgres_mvp_smoke_local.py

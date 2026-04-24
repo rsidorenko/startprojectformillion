@@ -1,0 +1,257 @@
+"""Pure tests: TransportSafeResponse → Telegram outbound plan (no SDK, no copy)."""
+
+from __future__ import annotations
+
+import dataclasses
+import enum
+
+from app.application.handlers import BootstrapIdentityResult, GetSubscriptionStatusResult
+from app.bot_transport.outbound import (
+    OutboundKeyboardMarker,
+    OutboundMessageKey,
+    OutboundNextActionKey,
+    OutboundPlanCategory,
+    TelegramOutboundPlan,
+    map_transport_safe_to_outbound_plan,
+)
+from app.bot_transport.presentation import (
+    TransportResponseCategory,
+    TransportSafeResponse,
+    TransportStatusCode,
+    map_bootstrap_identity_to_transport,
+    map_get_subscription_status_to_transport,
+)
+from app.security.errors import UserSafeErrorCode
+from app.shared.correlation import new_correlation_id
+from app.shared.types import OperationOutcomeCategory, SafeUserStatusCategory
+
+
+def _assert_no_foreign_enums_on_plan(plan: TelegramOutboundPlan) -> None:
+    """Outbound plan must not carry application/domain enum instances."""
+    for field in dataclasses.fields(plan):
+        val = getattr(plan, field.name)
+        if isinstance(val, enum.Enum):
+            assert type(val).__module__ == "app.bot_transport.outbound", (
+                f"unexpected enum on plan field {field.name}: {type(val)}"
+            )
+
+
+def _plan_strings_lower(plan: TelegramOutboundPlan) -> str:
+    parts = [
+        plan.message_key,
+        plan.next_action_key or "",
+        plan.keyboard_marker,
+        plan.category.value,
+    ]
+    return " ".join(parts).lower()
+
+
+def test_bootstrap_success_stable_message_key() -> None:
+    cid = new_correlation_id()
+    safe = map_bootstrap_identity_to_transport(
+        BootstrapIdentityResult(
+            outcome=OperationOutcomeCategory.SUCCESS,
+            correlation_id=cid,
+            internal_user_id="u1",
+            user_safe=None,
+            idempotent_replay=False,
+        ),
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    assert plan.message_key == OutboundMessageKey.IDENTITY_READY.value
+    assert plan.category is OutboundPlanCategory.SUCCESS
+    assert plan.correlation_id == cid
+
+
+def test_bootstrap_duplicate_replay_same_outbound_plan_as_success() -> None:
+    cid = new_correlation_id()
+    first = map_bootstrap_identity_to_transport(
+        BootstrapIdentityResult(
+            outcome=OperationOutcomeCategory.SUCCESS,
+            correlation_id=cid,
+            internal_user_id="u1",
+            user_safe=None,
+            idempotent_replay=False,
+        ),
+    )
+    replay = map_bootstrap_identity_to_transport(
+        BootstrapIdentityResult(
+            outcome=OperationOutcomeCategory.SUCCESS,
+            correlation_id=cid,
+            internal_user_id="u1",
+            user_safe=None,
+            idempotent_replay=True,
+        ),
+    )
+    assert map_transport_safe_to_outbound_plan(first) == map_transport_safe_to_outbound_plan(
+        replay
+    )
+
+
+def test_onboarding_guidance_has_onboarding_action_hint() -> None:
+    cid = new_correlation_id()
+    safe = map_get_subscription_status_to_transport(
+        GetSubscriptionStatusResult(
+            outcome=OperationOutcomeCategory.NOT_FOUND,
+            correlation_id=cid,
+            safe_status=SafeUserStatusCategory.NEEDS_BOOTSTRAP,
+            user_safe=UserSafeErrorCode.NOT_REGISTERED,
+        ),
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    assert plan.category is OutboundPlanCategory.GUIDANCE
+    assert plan.message_key == OutboundMessageKey.NEEDS_ONBOARDING.value
+    assert plan.next_action_key == OutboundNextActionKey.COMPLETE_BOOTSTRAP.value
+    assert plan.keyboard_marker == OutboundKeyboardMarker.PRIMARY_ONBOARDING.value
+    assert plan.correlation_id == cid
+
+
+def test_inactive_not_eligible_fail_closed_message_key() -> None:
+    cid = new_correlation_id()
+    safe = map_get_subscription_status_to_transport(
+        GetSubscriptionStatusResult(
+            outcome=OperationOutcomeCategory.SUCCESS,
+            correlation_id=cid,
+            safe_status=SafeUserStatusCategory.INACTIVE_OR_NOT_ELIGIBLE,
+            user_safe=None,
+        ),
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    assert plan.category is OutboundPlanCategory.SUCCESS
+    assert plan.message_key == OutboundMessageKey.INACTIVE_OR_NOT_ELIGIBLE.value
+    assert plan.next_action_key is None
+
+
+def test_needs_review_status_message_key() -> None:
+    cid = new_correlation_id()
+    safe = map_get_subscription_status_to_transport(
+        GetSubscriptionStatusResult(
+            outcome=OperationOutcomeCategory.SUCCESS,
+            correlation_id=cid,
+            safe_status=SafeUserStatusCategory.NEEDS_REVIEW,
+            user_safe=None,
+        ),
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    assert plan.message_key == OutboundMessageKey.NEEDS_REVIEW.value
+    assert plan.category is OutboundPlanCategory.SUCCESS
+
+
+def test_error_invalid_input_safe_key() -> None:
+    cid = new_correlation_id()
+    safe = TransportSafeResponse(
+        category=TransportResponseCategory.ERROR,
+        code="invalid_input",
+        correlation_id=cid,
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    assert plan.category is OutboundPlanCategory.ERROR
+    assert plan.message_key == OutboundMessageKey.INVALID_INPUT.value
+
+
+def test_error_try_again_later_safe_key() -> None:
+    cid = new_correlation_id()
+    safe = TransportSafeResponse(
+        category=TransportResponseCategory.ERROR,
+        code="try_again_later",
+        correlation_id=cid,
+    )
+    assert map_transport_safe_to_outbound_plan(safe).message_key == OutboundMessageKey.TRY_AGAIN_LATER.value
+
+
+def test_error_service_unavailable_safe_key() -> None:
+    cid = new_correlation_id()
+    safe = TransportSafeResponse(
+        category=TransportResponseCategory.ERROR,
+        code="service_unavailable",
+        correlation_id=cid,
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    assert plan.message_key == OutboundMessageKey.SERVICE_UNAVAILABLE.value
+    assert plan.category is OutboundPlanCategory.ERROR
+
+
+def test_outbound_plan_has_no_leaked_internal_enums() -> None:
+    cid = new_correlation_id()
+    safe = map_bootstrap_identity_to_transport(
+        BootstrapIdentityResult(
+            outcome=OperationOutcomeCategory.SUCCESS,
+            correlation_id=cid,
+            internal_user_id="u1",
+            user_safe=None,
+            idempotent_replay=False,
+        ),
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    _assert_no_foreign_enums_on_plan(plan)
+
+
+def test_outbound_mapping_excludes_billing_issuance_admin_concepts() -> None:
+    cid = new_correlation_id()
+    safes = (
+        map_get_subscription_status_to_transport(
+            GetSubscriptionStatusResult(
+                outcome=OperationOutcomeCategory.SUCCESS,
+                correlation_id=cid,
+                safe_status=SafeUserStatusCategory.INACTIVE_OR_NOT_ELIGIBLE,
+                user_safe=None,
+            ),
+        ),
+        TransportSafeResponse(
+            category=TransportResponseCategory.ERROR,
+            code="invalid_input",
+            correlation_id=cid,
+        ),
+    )
+    for safe in safes:
+        plan = map_transport_safe_to_outbound_plan(safe)
+        blob = _plan_strings_lower(plan)
+        assert "billing" not in blob
+        assert "issuance" not in blob
+        assert "admin" not in blob
+
+
+def test_correlation_id_pass_through() -> None:
+    cid = new_correlation_id()
+    safe = TransportSafeResponse(
+        category=TransportResponseCategory.ERROR,
+        code="try_again_later",
+        correlation_id=cid,
+    )
+    assert map_transport_safe_to_outbound_plan(safe).correlation_id == cid
+
+
+def test_no_product_text_embedded_in_plan_fields() -> None:
+    cid = new_correlation_id()
+    safe = map_get_subscription_status_to_transport(
+        GetSubscriptionStatusResult(
+            outcome=OperationOutcomeCategory.NOT_FOUND,
+            correlation_id=cid,
+            safe_status=SafeUserStatusCategory.NEEDS_BOOTSTRAP,
+            user_safe=UserSafeErrorCode.NOT_REGISTERED,
+        ),
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    for field in dataclasses.fields(plan):
+        val = getattr(plan, field.name)
+        if isinstance(val, str):
+            assert "\n" not in val
+            assert "\t" not in val
+            assert val == val.strip()
+            if field.name != "correlation_id":
+                assert " " not in val
+                assert not any(c.isupper() for c in val if c.isalpha())
+
+
+def test_guidance_without_next_action_hint_still_safe() -> None:
+    cid = new_correlation_id()
+    safe = TransportSafeResponse(
+        category=TransportResponseCategory.GUIDANCE,
+        code=TransportStatusCode.NEEDS_ONBOARDING.value,
+        correlation_id=cid,
+        next_action_hint=None,
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    assert plan.message_key == OutboundMessageKey.NEEDS_ONBOARDING.value
+    assert plan.next_action_key is None
+    assert plan.keyboard_marker == OutboundKeyboardMarker.NONE.value

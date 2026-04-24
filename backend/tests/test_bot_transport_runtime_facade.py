@@ -1,0 +1,187 @@
+"""Pure/in-memory tests for slice-1 runtime facade (raw update → rendered message package)."""
+
+from __future__ import annotations
+
+import asyncio
+import inspect
+
+from app.application.bootstrap import build_slice1_composition
+from app.bot_transport.message_catalog import RenderedMessagePackage
+from app.bot_transport.runtime_facade import (
+    Slice1TelegramRuntimeFacade,
+    handle_slice1_telegram_update_to_rendered_message,
+)
+from app.shared.correlation import is_valid_correlation_id, new_correlation_id
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+def _base_message(*, text: str, user_id: int = 42, chat_type: str = "private") -> dict[str, object]:
+    return {
+        "message_id": 1,
+        "from": {"id": user_id, "is_bot": False, "first_name": "U"},
+        "chat": {"id": user_id, "type": chat_type},
+        "text": text,
+    }
+
+
+def _update(
+    *,
+    update_id: int = 1,
+    message: dict[str, object] | None = None,
+    **extra: object,
+) -> dict[str, object]:
+    u: dict[str, object] = {"update_id": update_id, "message": message}
+    u.update(extra)
+    return u
+
+
+def test_facade_raw_private_start_returns_identity_ready_rendered() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        raw = _update(message=_base_message(text="/start"))
+        pkg = await handle_slice1_telegram_update_to_rendered_message(raw, c, correlation_id=cid)
+        assert isinstance(pkg, RenderedMessagePackage)
+        assert pkg.message_text == "Identity is ready. You can continue in this chat."
+        assert pkg.action_keys == ()
+        assert pkg.correlation_id == cid
+
+    _run(main())
+
+
+def test_facade_duplicate_raw_start_same_rendered_one_audit() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        raw = _update(update_id=5, message=_base_message(user_id=42, text="/start"))
+        p1 = await handle_slice1_telegram_update_to_rendered_message(raw, c, correlation_id=cid)
+        p2 = await handle_slice1_telegram_update_to_rendered_message(raw, c, correlation_id=cid)
+        assert p1.message_text == p2.message_text
+        assert p1.correlation_id == p2.correlation_id == cid
+        assert len(await c.audit.recorded_events()) == 1
+
+    _run(main())
+
+
+def test_facade_raw_status_unknown_user_onboarding_guidance_rendered() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        raw = _update(update_id=99, message=_base_message(user_id=999, text="/status"))
+        pkg = await handle_slice1_telegram_update_to_rendered_message(raw, c, correlation_id=cid)
+        assert pkg.message_text == "Continue with the suggested action to use this bot."
+        assert pkg.action_keys == ("complete_bootstrap",)
+        assert pkg.correlation_id == cid
+
+    _run(main())
+
+
+def test_facade_raw_status_after_bootstrap_no_snapshot_fail_closed_rendered() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        uid = 77
+        await handle_slice1_telegram_update_to_rendered_message(
+            _update(update_id=2, message=_base_message(user_id=uid, text="/start")),
+            c,
+            correlation_id=cid,
+        )
+        pkg = await handle_slice1_telegram_update_to_rendered_message(
+            _update(message=_base_message(user_id=uid, text="/status")),
+            c,
+            correlation_id=cid,
+        )
+        assert pkg.message_text == "No access is available for this account right now."
+        assert pkg.correlation_id == cid
+
+    _run(main())
+
+
+def test_facade_unsupported_update_surface_maps_to_invalid_input_rendered() -> None:
+    """Adapter rejects callback_query surfaces; pipeline maps to invalid_input catalog copy."""
+
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        raw = _update(
+            message=_base_message(text="/start"),
+            callback_query={"id": "q", "from": {"id": 1}, "data": "x"},
+        )
+        pkg = await handle_slice1_telegram_update_to_rendered_message(raw, c, correlation_id=cid)
+        assert pkg.message_text == "That input is not valid. Try again."
+        assert pkg.correlation_id == cid
+
+    _run(main())
+
+
+def test_facade_invalid_inputs_safe_no_exception() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        cases = [
+            {"update_id": 1},
+            _update(message=_base_message(text="/nope")),
+            _update(message=_base_message(text="/start", chat_type="group")),
+        ]
+        for raw in cases:
+            pkg = await handle_slice1_telegram_update_to_rendered_message(raw, c, correlation_id=cid)
+            assert isinstance(pkg, RenderedMessagePackage)
+            assert pkg.correlation_id == cid
+
+    _run(main())
+
+
+def test_facade_correlation_id_preserved_when_provided() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        ok = await handle_slice1_telegram_update_to_rendered_message(
+            _update(message=_base_message(text="/start")),
+            c,
+            correlation_id=cid,
+        )
+        assert ok.correlation_id == cid
+        bad = await handle_slice1_telegram_update_to_rendered_message(
+            _update(message=_base_message(text="/nope")),
+            c,
+            correlation_id=cid,
+        )
+        assert bad.correlation_id == cid
+
+    _run(main())
+
+
+def test_facade_generated_correlation_id_when_omitted() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        raw = _update(message=_base_message(text="/start"))
+        pkg = await handle_slice1_telegram_update_to_rendered_message(raw, c)
+        assert is_valid_correlation_id(pkg.correlation_id)
+
+    _run(main())
+
+
+def test_facade_module_excludes_billing_issuance_admin_concepts() -> None:
+    import app.bot_transport.runtime_facade as rf
+
+    src = inspect.getsource(rf)
+    lower = src.lower()
+    assert "billing" not in lower
+    assert "issuance" not in lower
+    assert "admin" not in lower
+
+
+def test_slice1_telegram_runtime_facade_delegates() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        raw = _update(message=_base_message(text="/start"))
+        facade = Slice1TelegramRuntimeFacade()
+        pkg = await facade.handle_update_to_rendered_message(raw, c, correlation_id=cid)
+        assert pkg.message_text == "Identity is ready. You can continue in this chat."
+        assert pkg.correlation_id == cid
+
+    _run(main())

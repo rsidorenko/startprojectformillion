@@ -1,0 +1,91 @@
+"""Pure transport boundary helpers (slice 1): normalization and presentation mapping."""
+
+from __future__ import annotations
+
+from app.bot_transport.normalized import (
+    NormalizationRejectReason,
+    NormalizedSlice1Bootstrap,
+    NormalizedSlice1Rejected,
+    NormalizedSlice1Result,
+    NormalizedSlice1Status,
+    TransportIncomingEnvelope,
+    normalize_command_token,
+    parse_slice1_transport,
+)
+from app.bot_transport.dispatcher import Slice1Dispatcher, dispatch_slice1_transport
+from app.bot_transport.runtime_facade import (
+    Slice1TelegramRuntimeFacade,
+    handle_slice1_telegram_update_to_rendered_message,
+)
+from app.bot_transport.runtime_wrapper import (
+    Slice1TelegramRuntimeWrapper,
+    TelegramRuntimeAction,
+    TelegramRuntimeActionKind,
+    extract_eligible_private_chat_id_from_telegram_like_update,
+    handle_slice1_telegram_update_to_runtime_action,
+)
+from app.bot_transport.service import Slice1TelegramService, handle_slice1_telegram_update
+from app.bot_transport.telegram_adapter import (
+    TelegramAdapterRejectReason,
+    TelegramAdapterRejected,
+    extract_slice1_envelope_from_telegram_update,
+)
+from app.bot_transport.message_catalog import (
+    RenderedMessagePackage,
+    render_telegram_outbound_plan,
+)
+from app.bot_transport.outbound import (
+    OutboundKeyboardMarker,
+    OutboundMessageKey,
+    OutboundNextActionKey,
+    OutboundPlanCategory,
+    TelegramOutboundPlan,
+    map_transport_safe_to_outbound_plan,
+)
+from app.bot_transport.presentation import (
+    TransportNextActionHint,
+    TransportResponseCategory,
+    TransportSafeResponse,
+    TransportStatusCode,
+    map_bootstrap_identity_to_transport,
+    map_get_subscription_status_to_transport,
+)
+
+__all__ = [
+    "Slice1TelegramRuntimeFacade",
+    "handle_slice1_telegram_update_to_rendered_message",
+    "Slice1TelegramRuntimeWrapper",
+    "TelegramRuntimeAction",
+    "TelegramRuntimeActionKind",
+    "extract_eligible_private_chat_id_from_telegram_like_update",
+    "handle_slice1_telegram_update_to_runtime_action",
+    "Slice1TelegramService",
+    "handle_slice1_telegram_update",
+    "TelegramAdapterRejectReason",
+    "TelegramAdapterRejected",
+    "extract_slice1_envelope_from_telegram_update",
+    "NormalizationRejectReason",
+    "NormalizedSlice1Bootstrap",
+    "NormalizedSlice1Rejected",
+    "NormalizedSlice1Result",
+    "NormalizedSlice1Status",
+    "TransportIncomingEnvelope",
+    "Slice1Dispatcher",
+    "dispatch_slice1_transport",
+    "TransportNextActionHint",
+    "TransportResponseCategory",
+    "TransportSafeResponse",
+    "TransportStatusCode",
+    "map_bootstrap_identity_to_transport",
+    "map_get_subscription_status_to_transport",
+    "OutboundKeyboardMarker",
+    "OutboundMessageKey",
+    "OutboundNextActionKey",
+    "OutboundPlanCategory",
+    "TelegramOutboundPlan",
+    "map_transport_safe_to_outbound_plan",
+    "RenderedMessagePackage",
+    "render_telegram_outbound_plan",
+    "normalize_command_token",
+    "parse_slice1_transport",
+]

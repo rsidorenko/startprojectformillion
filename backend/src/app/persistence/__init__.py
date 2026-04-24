@@ -1,0 +1,93 @@
+"""Persistence implementations (slice 1: in-memory adapters for tests and local composition)."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from app.persistence.billing_events_ledger_contracts import (
+    BillingEventAmountCurrency,
+    BillingEventLedgerRecord,
+    BillingEventLedgerStatus,
+    BillingEventsLedgerRepository,
+    BillingFactsPresenceCategory,
+    BillingEventsLedgerUserSummary,
+)
+from app.persistence.mismatch_quarantine_contracts import (
+    MismatchQuarantineReasonCode,
+    MismatchQuarantineRecord,
+    MismatchQuarantineRepository,
+    MismatchQuarantineResolutionStatus,
+    MismatchQuarantineSourceType,
+    MismatchQuarantineSummaryMarker,
+    MismatchQuarantineUserSummary,
+)
+from app.persistence.reconciliation_runs_contracts import (
+    ReconciliationRunOutcome,
+    ReconciliationRunRecord,
+    ReconciliationRunsRepository,
+    ReconciliationRunStatus,
+    ReconciliationRunUserSummary,
+)
+from app.persistence.in_memory import (
+    InMemoryAuditAppender,
+    InMemoryIdempotencyRepository,
+    InMemorySubscriptionSnapshotReader,
+    InMemoryUserIdentityRepository,
+)
+from app.persistence.postgres_audit import PostgresAuditAppender
+from app.persistence.postgres_idempotency import PostgresIdempotencyRepository
+from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
+from app.persistence.postgres_user_identity import PostgresUserIdentityRepository
+from app.persistence.billing_events_ledger_in_memory import InMemoryBillingEventsLedgerRepository
+from app.persistence.mismatch_quarantine_in_memory import InMemoryMismatchQuarantineRepository
+from app.persistence.reconciliation_runs_in_memory import InMemoryReconciliationRunsRepository
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy ADM-02 fact-of-access exports to avoid import cycles with admin_support package init."""
+
+    if name in (
+        "Adm02FactOfAccessAppendRecord",
+        "Adm02FactOfAccessRecordAppender",
+        "InMemoryAdm02FactOfAccessRecordAppender",
+    ):
+        from app.persistence import adm02_fact_of_access as _adm02
+
+        return getattr(_adm02, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = [
+    "Adm02FactOfAccessAppendRecord",
+    "Adm02FactOfAccessRecordAppender",
+    "InMemoryAdm02FactOfAccessRecordAppender",
+    "InMemoryAuditAppender",
+    "InMemoryIdempotencyRepository",
+    "InMemorySubscriptionSnapshotReader",
+    "InMemoryUserIdentityRepository",
+    "PostgresAuditAppender",
+    "PostgresIdempotencyRepository",
+    "PostgresSubscriptionSnapshotReader",
+    "PostgresUserIdentityRepository",
+    "BillingEventAmountCurrency",
+    "BillingEventLedgerRecord",
+    "BillingEventLedgerStatus",
+    "BillingEventsLedgerRepository",
+    "BillingEventsLedgerUserSummary",
+    "BillingFactsPresenceCategory",
+    "InMemoryBillingEventsLedgerRepository",
+    "InMemoryMismatchQuarantineRepository",
+    "InMemoryReconciliationRunsRepository",
+    "MismatchQuarantineReasonCode",
+    "MismatchQuarantineRecord",
+    "MismatchQuarantineRepository",
+    "MismatchQuarantineResolutionStatus",
+    "MismatchQuarantineSourceType",
+    "MismatchQuarantineSummaryMarker",
+    "MismatchQuarantineUserSummary",
+    "ReconciliationRunOutcome",
+    "ReconciliationRunRecord",
+    "ReconciliationRunsRepository",
+    "ReconciliationRunStatus",
+    "ReconciliationRunUserSummary",
+]
