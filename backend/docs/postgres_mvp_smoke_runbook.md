@@ -73,6 +73,7 @@ Manual `workflow_dispatch` is still available as a fallback trigger.
   - auto-triggered run `#9`;
   - conclusion `success`;
   - artifact upload confirmed.
+  - Advisory admin/support internal read gate: green at `main@2c65a9c` (workflow run `24908572883`; artifact `backend-postgres-mvp-smoke-validation-reports`; marker file `backend-admin-support-internal-read-gate-summary.txt` with `internal_read_gate_outcome=success`).
 - Non-blocking tooling follow-up:
   - residual Node20 warning may still appear for `actions/upload-artifact@v5` even with Node 24 opt-in;
   - treat as upstream/tooling messaging follow-up, not a backend runtime gate regression.

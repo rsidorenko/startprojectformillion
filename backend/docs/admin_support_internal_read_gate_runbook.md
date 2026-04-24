@@ -44,6 +44,15 @@ On failure, the process exits non-zero and prints **exactly one fixed line** to 
 
 The gate runs as **advisory evidence** in workflow `backend-postgres-mvp-smoke-validation` (after backend dependencies install, before blocking PostgreSQL MVP smoke gates). Failures are written to the published reports artifact as `backend-admin-support-internal-read-gate-summary.txt` (`internal_read_gate_outcome=success|failure|unknown` only); review failures but they **do not block** the targeted smoke helper regression or the real local isolated PostgreSQL MVP smoke gates.
 
+## Current delivery checkpoint
+
+Documentation-only marker tying this gate to a **published CI artifact** (no new runtime guarantees).
+
+- **Branch / commit:** `main` @ `2c65a9c` (full SHA `2c65a9ced7c7798f320a3b0eb8ae8bc67f647332`).
+- **Workflow:** `backend-postgres-mvp-smoke-validation`; **run id** `24908572883`; **conclusion** `success`.
+- **Artifact:** `backend-postgres-mvp-smoke-validation-reports`; file `backend-admin-support-internal-read-gate-summary.txt` includes marker `internal_read_gate_outcome=success`.
+- **Reminder:** this remains **advisory** CI evidence for operator preflight semantics; it is **not** a blocking production network boundary, transport policy, or RBAC substitute.
+
 Local command remains:
 
 ```bash
