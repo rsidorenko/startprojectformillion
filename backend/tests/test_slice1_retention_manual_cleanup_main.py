@@ -267,6 +267,8 @@ async def test_run_slice1_retention_cleanup_from_env_wiring(
         cutoff_iso="2020-01-01T00:00:00+00:00",
         audit_rows=3,
         idempotency_rows=4,
+        outbound_delivery_rows_matched=9,
+        outbound_delivery_rows_deleted=0,
         rounds=1,
     )
     cleanup = AsyncMock(return_value=fake_result)
@@ -306,6 +308,8 @@ async def test_run_slice1_retention_cleanup_from_env_wiring(
     assert "cutoff=2020-01-01T00:00:00+00:00" in out
     assert "audit_rows=3" in out
     assert "idempotency_rows=4" in out
+    assert "outbound_delivery_rows_matched=9" in out
+    assert "outbound_delivery_rows_deleted=0" in out
     assert "rounds=1" in out
     assert dsn not in out
 

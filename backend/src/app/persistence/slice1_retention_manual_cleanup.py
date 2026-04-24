@@ -1,6 +1,9 @@
-"""Manual slice-1 PostgreSQL retention (audit + completed idempotency rows by age).
+"""Manual slice-1 PostgreSQL retention (audit, completed idempotency, sent outbound ledger by age).
 
 Pure logic: no environment reads. Callers supply a connection-like object and UTC ``now``.
+
+Outbound ledger: only ``delivery_status = 'sent'`` rows with ``created_at`` before the cutoff;
+``pending`` rows are never deleted.
 """
 
 from __future__ import annotations
@@ -52,6 +55,24 @@ _DELETE_IDEMPOTENCY_BATCH = """
     )
 """
 
+_COUNT_OUTBOUND_DELIVERY = """
+    SELECT COUNT(*)::bigint
+    FROM slice1_uc01_outbound_deliveries
+    WHERE delivery_status = 'sent' AND created_at < $1::timestamptz
+"""
+
+_DELETE_OUTBOUND_DELIVERY_BATCH = """
+    DELETE FROM slice1_uc01_outbound_deliveries
+    WHERE idempotency_key IN (
+        SELECT idempotency_key
+        FROM slice1_uc01_outbound_deliveries
+        WHERE delivery_status = 'sent' AND created_at < $1::timestamptz
+        ORDER BY created_at ASC, idempotency_key ASC
+        LIMIT $2::int
+        FOR UPDATE SKIP LOCKED
+    )
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class RetentionSettings:
@@ -67,6 +88,8 @@ class RetentionCleanupResult:
     cutoff_iso: str
     audit_rows: int
     idempotency_rows: int
+    outbound_delivery_rows_matched: int
+    outbound_delivery_rows_deleted: int
     rounds: int
 
 
@@ -116,16 +139,20 @@ async def run_slice1_retention_cleanup(
     if settings.dry_run:
         raw_a = await sql.fetchval(_COUNT_AUDIT, cutoff)
         raw_i = await sql.fetchval(_COUNT_IDEMPOTENCY, cutoff)
+        raw_o = await sql.fetchval(_COUNT_OUTBOUND_DELIVERY, cutoff)
         return RetentionCleanupResult(
             dry_run=True,
             cutoff_iso=cutoff_iso,
             audit_rows=int(raw_a or 0),
             idempotency_rows=int(raw_i or 0),
+            outbound_delivery_rows_matched=int(raw_o or 0),
+            outbound_delivery_rows_deleted=0,
             rounds=0,
         )
 
     total_audit = 0
     total_idem = 0
+    total_out = 0
     rounds_executed = 0
 
     while rounds_executed < settings.max_rounds:
@@ -140,11 +167,18 @@ async def run_slice1_retention_cleanup(
             cutoff,
             settings.batch_limit,
         )
+        status_o = await sql.execute(
+            _DELETE_OUTBOUND_DELIVERY_BATCH,
+            cutoff,
+            settings.batch_limit,
+        )
         da = _parse_delete_count(status_a)
         di = _parse_delete_count(status_i)
+        do = _parse_delete_count(status_o)
         total_audit += da
         total_idem += di
-        if da == 0 and di == 0:
+        total_out += do
+        if da == 0 and di == 0 and do == 0:
             break
 
     return RetentionCleanupResult(
@@ -152,5 +186,7 @@ async def run_slice1_retention_cleanup(
         cutoff_iso=cutoff_iso,
         audit_rows=total_audit,
         idempotency_rows=total_idem,
+        outbound_delivery_rows_matched=0,
+        outbound_delivery_rows_deleted=total_out,
         rounds=rounds_executed,
     )

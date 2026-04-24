@@ -20,6 +20,7 @@ _TEST_AUDIT_CORR_OLD = "itest-s1ret-audit-old"
 _TEST_AUDIT_CORR_NEW = "itest-s1ret-audit-new"
 _TEST_IDEMP_KEY_OLD = "itest-s1ret-idem-old"
 _TEST_IDEMP_KEY_NEW = "itest-s1ret-idem-new"
+_TEST_LEDGER_SENT_OLD = "itest-s1ret-ledger-sent-old"
 
 # Fixed clock: cutoff lands in 2010 so typical DB rows (created_at ~ now) are not counted.
 _NOW_UTC = datetime(2010, 1, 2, 12, 0, 0, tzinfo=UTC)
@@ -92,6 +93,17 @@ def test_postgres_retention_cleanup_dry_run_counts_and_no_delete(
                 _TEST_IDEMP_KEY_NEW,
                 _FRESH_CREATED_AT,
             )
+            await conn.execute(
+                """
+                INSERT INTO slice1_uc01_outbound_deliveries (
+                    idempotency_key, delivery_status, telegram_message_id,
+                    last_attempt_at, created_at, updated_at
+                )
+                VALUES ($1::text, 'sent', 9001::bigint, NULL::timestamptz, $2::timestamptz, $2::timestamptz)
+                """,
+                _TEST_LEDGER_SENT_OLD,
+                _OLD_CREATED_AT,
+            )
 
             try:
                 settings = RetentionSettings(
@@ -109,6 +121,8 @@ def test_postgres_retention_cleanup_dry_run_counts_and_no_delete(
                 assert result.dry_run is True
                 assert result.audit_rows == 1
                 assert result.idempotency_rows == 1
+                assert result.outbound_delivery_rows_matched == 1
+                assert result.outbound_delivery_rows_deleted == 0
                 assert result.rounds == 0
 
                 for corr in (_TEST_AUDIT_CORR_OLD, _TEST_AUDIT_CORR_NEW):
@@ -124,7 +138,18 @@ def test_postgres_retention_cleanup_dry_run_counts_and_no_delete(
                         key,
                     )
                     assert row is not None, f"missing idempotency row {key}"
+                assert (
+                    await conn.fetchrow(
+                        "SELECT 1 FROM slice1_uc01_outbound_deliveries WHERE idempotency_key = $1::text",
+                        _TEST_LEDGER_SENT_OLD,
+                    )
+                    is not None
+                )
             finally:
+                await conn.execute(
+                    "DELETE FROM slice1_uc01_outbound_deliveries WHERE idempotency_key = $1::text",
+                    _TEST_LEDGER_SENT_OLD,
+                )
                 await conn.execute(
                     "DELETE FROM slice1_audit_events WHERE correlation_id = ANY($1::text[])",
                     [_TEST_AUDIT_CORR_OLD, _TEST_AUDIT_CORR_NEW],

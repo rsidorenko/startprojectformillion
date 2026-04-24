@@ -111,6 +111,8 @@ def test_postgres_retention_scheduled_delete_path_requires_explicit_opt_in(
                 out = buf.getvalue()
                 assert "slice1_retention_scheduled_cleanup" in out
                 assert "dry_run=False" in out
+                assert "outbound_delivery_rows_matched=" in out
+                assert "outbound_delivery_rows_deleted=" in out
 
                 old_audit = await conn.fetchrow(
                     "SELECT 1 FROM slice1_audit_events WHERE correlation_id = $1::text",

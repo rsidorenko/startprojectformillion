@@ -81,7 +81,7 @@ class _FakeSql:
 @pytest.mark.asyncio
 async def test_dry_run_uses_count_only_no_delete() -> None:
     sql = _FakeSql()
-    sql.enqueue_fetchval(12, 3)
+    sql.enqueue_fetchval(12, 3, 7)
     now = datetime(2026, 4, 24, 12, 0, tzinfo=UTC)
     result = await run_slice1_retention_cleanup(
         sql,
@@ -91,8 +91,10 @@ async def test_dry_run_uses_count_only_no_delete() -> None:
     assert result.dry_run is True
     assert result.audit_rows == 12
     assert result.idempotency_rows == 3
+    assert result.outbound_delivery_rows_matched == 7
+    assert result.outbound_delivery_rows_deleted == 0
     assert result.rounds == 0
-    assert len(sql.fetchval_calls) == 2
+    assert len(sql.fetchval_calls) == 3
     assert len(sql.execute_calls) == 0
     for q, _ in sql.fetchval_calls:
         assert "COUNT(*)" in q
@@ -102,9 +104,9 @@ async def test_dry_run_uses_count_only_no_delete() -> None:
 @pytest.mark.asyncio
 async def test_delete_path_aggregates_until_both_zero() -> None:
     sql = _FakeSql()
-    sql.enqueue_execute("DELETE 5", "DELETE 2")
-    sql.enqueue_execute("DELETE 1", "DELETE 0")
-    sql.enqueue_execute("DELETE 0", "DELETE 0")
+    sql.enqueue_execute("DELETE 5", "DELETE 2", "DELETE 1")
+    sql.enqueue_execute("DELETE 1", "DELETE 0", "DELETE 0")
+    sql.enqueue_execute("DELETE 0", "DELETE 0", "DELETE 0")
     now = datetime(2026, 4, 24, 12, 0, tzinfo=UTC)
     result = await run_slice1_retention_cleanup(
         sql,
@@ -114,14 +116,16 @@ async def test_delete_path_aggregates_until_both_zero() -> None:
     assert result.dry_run is False
     assert result.audit_rows == 6
     assert result.idempotency_rows == 2
+    assert result.outbound_delivery_rows_matched == 0
+    assert result.outbound_delivery_rows_deleted == 1
     assert result.rounds == 3
-    assert len(sql.execute_calls) == 6
+    assert len(sql.execute_calls) == 9
 
 
 @pytest.mark.asyncio
 async def test_delete_path_passes_same_cutoff_and_batch_to_both_tables() -> None:
     sql = _FakeSql()
-    sql.enqueue_execute("DELETE 0", "DELETE 0")
+    sql.enqueue_execute("DELETE 0", "DELETE 0", "DELETE 0")
     now = datetime(2026, 4, 24, 12, 0, tzinfo=UTC)
     expected_cutoff = retention_cutoff(now_utc=now, ttl_seconds=3600)
     result = await run_slice1_retention_cleanup(
@@ -129,14 +133,16 @@ async def test_delete_path_passes_same_cutoff_and_batch_to_both_tables() -> None
         now_utc=now,
         settings=_settings(dry=False, batch=17, max_rounds=1),
     )
-    assert len(sql.execute_calls) == 2
+    assert len(sql.execute_calls) == 3
     q_audit, args_audit = sql.execute_calls[0]
     q_idem, args_idem = sql.execute_calls[1]
+    q_out, args_out = sql.execute_calls[2]
     assert "slice1_audit_events" in q_audit
     assert "idempotency_records" in q_idem
-    assert args_audit[0] == args_idem[0] == expected_cutoff
+    assert "slice1_uc01_outbound_deliveries" in q_out
+    assert args_audit[0] == args_idem[0] == args_out[0] == expected_cutoff
     assert args_audit[0].tzinfo == UTC
-    assert args_audit[1] == args_idem[1] == 17
+    assert args_audit[1] == args_idem[1] == args_out[1] == 17
     assert result.rounds == 1
 
 
@@ -144,7 +150,7 @@ async def test_delete_path_passes_same_cutoff_and_batch_to_both_tables() -> None
 async def test_delete_respects_max_rounds() -> None:
     sql = _FakeSql()
     for _ in range(5):
-        sql.enqueue_execute("DELETE 1", "DELETE 1")
+        sql.enqueue_execute("DELETE 1", "DELETE 1", "DELETE 0")
     now = datetime(2026, 4, 24, 12, 0, tzinfo=UTC)
     result = await run_slice1_retention_cleanup(
         sql,
@@ -154,7 +160,8 @@ async def test_delete_respects_max_rounds() -> None:
     assert result.rounds == 2
     assert result.audit_rows == 2
     assert result.idempotency_rows == 2
-    assert len(sql.execute_calls) == 4
+    assert result.outbound_delivery_rows_deleted == 0
+    assert len(sql.execute_calls) == 6
 
 
 def test_idempotency_sql_guardrail_completed_true() -> None:
@@ -165,10 +172,18 @@ def test_idempotency_sql_guardrail_completed_true() -> None:
     assert "completed = false" not in m._DELETE_IDEMPOTENCY_BATCH.lower()
 
 
+def test_outbound_delivery_sql_guardrail_sent_only() -> None:
+    from app.persistence import slice1_retention_manual_cleanup as m
+
+    assert "delivery_status = 'sent'" in m._COUNT_OUTBOUND_DELIVERY
+    assert "delivery_status = 'sent'" in m._DELETE_OUTBOUND_DELIVERY_BATCH
+    assert "delivery_status = 'pending'" not in m._DELETE_OUTBOUND_DELIVERY_BATCH.lower()
+
+
 @pytest.mark.asyncio
 async def test_idempotency_count_and_delete_predicates() -> None:
     sql = _FakeSql()
-    sql.enqueue_fetchval(0, 0)
+    sql.enqueue_fetchval(0, 0, 0)
     now = datetime(2026, 4, 24, 12, 0, tzinfo=UTC)
     await run_slice1_retention_cleanup(sql, now_utc=now, settings=_settings(dry=True))
     count_q = " ".join(q for q, _ in sql.fetchval_calls)
@@ -179,14 +194,17 @@ async def test_idempotency_count_and_delete_predicates() -> None:
 @pytest.mark.asyncio
 async def test_result_summary_has_no_dsn_or_key_lists() -> None:
     sql = _FakeSql()
-    sql.enqueue_fetchval(1, 1)
+    sql.enqueue_fetchval(1, 1, 0)
     now = datetime(2026, 4, 24, 12, 0, tzinfo=UTC)
     result = await run_slice1_retention_cleanup(
         sql,
         now_utc=now,
         settings=_settings(dry=True),
     )
-    blob = f"{result.cutoff_iso!s} {result.audit_rows} {result.idempotency_rows}"
+    blob = (
+        f"{result.cutoff_iso!s} {result.audit_rows} {result.idempotency_rows} "
+        f"{result.outbound_delivery_rows_matched} {result.outbound_delivery_rows_deleted}"
+    )
     assert not re.search(r"postgres(ql)?://", blob, re.I)
     assert "correlation" not in blob.lower()
     assert "idempotency_key" not in blob.lower()
@@ -198,10 +216,20 @@ def test_retention_cleanup_result_is_low_cardinality_fields_only() -> None:
         cutoff_iso="2026-04-24T00:00:00+00:00",
         audit_rows=1,
         idempotency_rows=2,
+        outbound_delivery_rows_matched=0,
+        outbound_delivery_rows_deleted=3,
         rounds=3,
     )
     names = {f.name for f in fields(RetentionCleanupResult)}
-    assert names == {"dry_run", "cutoff_iso", "audit_rows", "idempotency_rows", "rounds"}
+    assert names == {
+        "dry_run",
+        "cutoff_iso",
+        "audit_rows",
+        "idempotency_rows",
+        "outbound_delivery_rows_matched",
+        "outbound_delivery_rows_deleted",
+        "rounds",
+    }
 
 
 def test_cutoff_moves_back_by_ttl() -> None:

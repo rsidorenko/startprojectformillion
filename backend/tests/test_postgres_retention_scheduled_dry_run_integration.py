@@ -102,6 +102,8 @@ def test_postgres_retention_scheduled_dry_run_default_forces_dry(
                 out = buf.getvalue()
                 assert "slice1_retention_scheduled_cleanup" in out
                 assert "dry_run=True" in out
+                assert "outbound_delivery_rows_matched=" in out
+                assert "outbound_delivery_rows_deleted=0" in out
 
                 for corr in (_TEST_AUDIT_CORR_OLD, _TEST_AUDIT_CORR_NEW):
                     row = await conn.fetchrow(

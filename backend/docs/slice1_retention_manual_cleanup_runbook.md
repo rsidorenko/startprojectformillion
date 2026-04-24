@@ -2,14 +2,14 @@
 
 ## Purpose
 
-One-off process that connects to PostgreSQL and either **counts** rows eligible for slice-1 retention (dry-run) or **deletes** them in batches: old rows in `slice1_audit_events`, and **completed** old rows in `idempotency_records`. Implemented in `app.persistence.slice1_retention_manual_cleanup` and started via `slice1_retention_manual_cleanup_main`.
+One-off process that connects to PostgreSQL and either **counts** rows eligible for slice-1 retention (dry-run) or **deletes** them in batches: old rows in `slice1_audit_events`, **completed** old rows in `idempotency_records`, and **`sent`** old rows in `slice1_uc01_outbound_deliveries` (UC-01 outbound delivery ledger). **`pending` ledger rows are never eligible** — same TTL/cutoff and batching env as the other tables. Implemented in `app.persistence.slice1_retention_manual_cleanup` and started via `slice1_retention_manual_cleanup_main`.
 
 ## Prerequisites
 
 - Run from the `backend` directory of this repo.
 - Python can import the `app` package (same layout as tests: set `PYTHONPATH=src`, matching `[tool.pytest.ini_options] pythonpath` in `pyproject.toml`).
 - Python 3.12+ (project `requires-python`).
-- Target PostgreSQL has the expected tables (`slice1_audit_events`, `idempotency_records`).
+- Target PostgreSQL has the expected tables (`slice1_audit_events`, `idempotency_records`, `slice1_uc01_outbound_deliveries` with migration `007` index applied).
 - Use only an **isolated or dev** database — not production (see Security notes).
 
 ## Required environment variables
@@ -19,8 +19,8 @@ One-off process that connects to PostgreSQL and either **counts** rows eligible 
 | `BOT_TOKEN` | Read by `load_runtime_config()`; must be non-empty and length ≥ 10 (same boundary as the rest of the backend). |
 | `DATABASE_URL` | Non-empty after trim; used to open an `asyncpg` pool. Must start with `postgresql://` or `postgres://`. For non-local `APP_ENV`, the URL must include an explicit `sslmode=` query parameter (see `validate_runtime_config` in `app.security.config`). |
 | `SLICE1_RETENTION_TTL_SECONDS` | Positive integer; rows older than `now_utc - TTL` are eligible. |
-| `SLICE1_RETENTION_BATCH_LIMIT` | Positive integer; max rows deleted **per table per batch round** (each round runs one batch delete on audit and one on idempotency). |
-| `SLICE1_RETENTION_MAX_ROUNDS` | Positive integer; upper bound on delete rounds in one process (stops early when both deletes remove zero rows). |
+| `SLICE1_RETENTION_BATCH_LIMIT` | Positive integer; max rows deleted **per table per batch round** (each round runs one batch delete on audit, one on idempotency, and one on eligible **`sent`** outbound ledger rows). |
+| `SLICE1_RETENTION_MAX_ROUNDS` | Positive integer; upper bound on delete rounds in one process (stops early when all three batch deletes remove zero rows). |
 
 ### Optional
 
@@ -54,8 +54,8 @@ python -m app.persistence.slice1_retention_manual_cleanup_main
 2. Loads retention settings from the `SLICE1_RETENTION_*` environment variables (`load_retention_settings_from_env`).
 3. Opens a small `asyncpg` pool (`min_size=1`, `max_size=4`) to `DATABASE_URL`.
 4. On one acquired connection, runs `run_slice1_retention_cleanup`:
-   - **Dry-run:** runs `COUNT(*)` for eligible audit rows and eligible **completed** idempotency rows; does **not** delete.
-   - **Delete:** repeatedly executes batched `DELETE ... FOR UPDATE SKIP LOCKED` for both tables until both batches delete zero rows or `max_rounds` is reached.
+   - **Dry-run:** runs `COUNT(*)` for eligible audit rows, eligible **completed** idempotency rows, and eligible **`sent`** outbound ledger rows (`created_at` before the cutoff); does **not** delete. **`pending` ledger rows are excluded** from both count and delete.
+   - **Delete:** repeatedly executes batched `DELETE ... FOR UPDATE SKIP LOCKED` for those three tables until all three batches delete zero rows or `max_rounds` is reached.
 5. Closes the pool.
 6. Prints **one** summary line to stdout (space-separated tokens).
 
@@ -64,17 +64,17 @@ python -m app.persistence.slice1_retention_manual_cleanup_main
 A single line of the form:
 
 ```text
-slice1_retention_cleanup dry_run=<bool> cutoff=<iso8601> audit_rows=<int> idempotency_rows=<int> rounds=<int>
+slice1_retention_cleanup dry_run=<bool> cutoff=<iso8601> audit_rows=<int> idempotency_rows=<int> outbound_delivery_rows_matched=<int> outbound_delivery_rows_deleted=<int> rounds=<int>
 ```
 
 Example shape (values illustrative only):
 
 ```text
-slice1_retention_cleanup dry_run=True cutoff=2026-04-23T12:00:00+00:00 audit_rows=42 idempotency_rows=7 rounds=0
+slice1_retention_cleanup dry_run=True cutoff=2026-04-23T12:00:00+00:00 audit_rows=42 idempotency_rows=7 outbound_delivery_rows_matched=3 outbound_delivery_rows_deleted=0 rounds=0
 ```
 
-- **Dry-run:** `dry_run=True`, `audit_rows` / `idempotency_rows` are **counts** of rows that would be eligible; `rounds` is always `0`.
-- **Delete:** `dry_run=False`, `audit_rows` / `idempotency_rows` are **cumulative deleted row counts** over all rounds; `rounds` is how many loop iterations ran (stops when both deletes return zero or cap hit).
+- **Dry-run:** `dry_run=True`, `audit_rows` / `idempotency_rows` / `outbound_delivery_rows_matched` are **counts** of rows that would be eligible; `outbound_delivery_rows_deleted` is always `0`; `rounds` is always `0`.
+- **Delete:** `dry_run=False`, `audit_rows` / `idempotency_rows` / `outbound_delivery_rows_deleted` are **cumulative deleted row counts** over all rounds; `outbound_delivery_rows_matched` is `0`; `rounds` is how many loop iterations ran (stops when all batch deletes return zero or cap hit).
 
 ## Success criteria
 
@@ -94,5 +94,6 @@ slice1_retention_cleanup dry_run=True cutoff=2026-04-23T12:00:00+00:00 audit_row
 
 - Use **only** an isolated or dev database when experimenting; mistakes are destructive in delete mode.
 - **Completed** `idempotency_records` rows older than the cutoff **can be deleted**; too small a TTL can delete data you still rely on.
+- **`sent`** outbound ledger rows older than the cutoff **can be deleted**; **`pending`** ledger rows are never deleted by this job (stale `pending` is out of scope here).
 - **Never** log, paste, or ticket a raw `DATABASE_URL` (credentials inside). Same care for `BOT_TOKEN`.
 - This runbook does **not** cover schedulers, cron, systemd, Kubernetes, or future automated retention jobs — only this manual CLI.

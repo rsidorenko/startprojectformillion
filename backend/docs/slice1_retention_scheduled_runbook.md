@@ -52,13 +52,13 @@ From `backend`, with `PYTHONPATH` including `src` so `app` resolves (same as the
 A single line, prefix and low-cardinality fields only:
 
 ```text
-slice1_retention_scheduled_cleanup dry_run=<bool> cutoff=<iso8601> audit_rows=<int> idempotency_rows=<int> rounds=<int>
+slice1_retention_scheduled_cleanup dry_run=<bool> cutoff=<iso8601> audit_rows=<int> idempotency_rows=<int> outbound_delivery_rows_matched=<int> outbound_delivery_rows_deleted=<int> rounds=<int>
 ```
 
-Field meanings match the shared core: dry-run = counts; delete = cumulative deleted row counts and rounds. Example shape (values illustrative):
+Field meanings match the shared core: dry-run = counts (including `outbound_delivery_rows_matched` for eligible **`sent`** ledger rows; `pending` excluded); delete = cumulative deleted row counts and rounds (`outbound_delivery_rows_deleted` for ledger **`sent`** rows only). Example shape (values illustrative):
 
 ```text
-slice1_retention_scheduled_cleanup dry_run=True cutoff=2026-04-24T12:00:00+00:00 audit_rows=10 idempotency_rows=2 rounds=0
+slice1_retention_scheduled_cleanup dry_run=True cutoff=2026-04-24T12:00:00+00:00 audit_rows=10 idempotency_rows=2 outbound_delivery_rows_matched=0 outbound_delivery_rows_deleted=0 rounds=0
 ```
 
 ## Safe usage guidance

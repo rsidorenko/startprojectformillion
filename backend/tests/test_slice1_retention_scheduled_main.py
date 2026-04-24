@@ -51,6 +51,8 @@ def test_scheduled_no_opt_in_forces_dry_run_true(monkeypatch: pytest.MonkeyPatch
             cutoff_iso="c",
             audit_rows=0,
             idempotency_rows=0,
+            outbound_delivery_rows_matched=0,
+            outbound_delivery_rows_deleted=0,
             rounds=0,
         )
     )
@@ -106,6 +108,8 @@ def test_scheduled_no_opt_in_overrides_only_dry_run(
             cutoff_iso="c",
             audit_rows=0,
             idempotency_rows=0,
+            outbound_delivery_rows_matched=0,
+            outbound_delivery_rows_deleted=0,
             rounds=0,
         )
     )
@@ -168,6 +172,8 @@ def test_scheduled_falsey_matrix_forces_dry_run_true(
             cutoff_iso="c",
             audit_rows=0,
             idempotency_rows=0,
+            outbound_delivery_rows_matched=0,
+            outbound_delivery_rows_deleted=0,
             rounds=0,
         )
     )
@@ -230,6 +236,8 @@ def test_scheduled_opt_in_respects_loaded_dry_run_false(
             cutoff_iso="c",
             audit_rows=0,
             idempotency_rows=0,
+            outbound_delivery_rows_matched=0,
+            outbound_delivery_rows_deleted=0,
             rounds=0,
         )
     )
@@ -285,6 +293,8 @@ def test_scheduled_opt_in_truthy_preserves_loaded_settings_pass_through(
             cutoff_iso="c",
             audit_rows=0,
             idempotency_rows=0,
+            outbound_delivery_rows_matched=0,
+            outbound_delivery_rows_deleted=0,
             rounds=0,
         )
     )
@@ -340,7 +350,13 @@ def test_scheduled_opt_in_with_loaded_dry_run_true(
     )
     cleanup = AsyncMock(
         return_value=RetentionCleanupResult(
-            dry_run=True, cutoff_iso="c", audit_rows=0, idempotency_rows=0, rounds=0
+            dry_run=True,
+            cutoff_iso="c",
+            audit_rows=0,
+            idempotency_rows=0,
+            outbound_delivery_rows_matched=0,
+            outbound_delivery_rows_deleted=0,
+            rounds=0,
         )
     )
 

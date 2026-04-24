@@ -44,6 +44,7 @@ def test_sorted_migration_sql_paths_repo_migrations_order() -> None:
         "004_slice1_audit_events.sql",
         "005_retention_timestamps.sql",
         "006_slice1_uc01_outbound_deliveries.sql",
+        "007_slice1_uc01_outbound_deliveries_sent_retention_index.sql",
     ]
 
 

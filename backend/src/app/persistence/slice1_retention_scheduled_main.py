@@ -53,6 +53,8 @@ async def run_slice1_retention_scheduled_from_env() -> None:
         f"cutoff={result.cutoff_iso}",
         f"audit_rows={result.audit_rows}",
         f"idempotency_rows={result.idempotency_rows}",
+        f"outbound_delivery_rows_matched={result.outbound_delivery_rows_matched}",
+        f"outbound_delivery_rows_deleted={result.outbound_delivery_rows_deleted}",
         f"rounds={result.rounds}",
         sep=" ",
     )

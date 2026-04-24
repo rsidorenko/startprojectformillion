@@ -37,7 +37,7 @@ If you already set `BOT_TOKEN` or those `SLICE1_RETENTION_*` values (non-blank),
 - Process exit code `0` when the child exit code is `0` (non-zero from the child raises `CalledProcessError` with `check=True`).
 - The child prints **one** summary line on stdout, same shape as the manual cleanup entrypoint, for example:
 
-`slice1_retention_cleanup dry_run=True cutoff=<iso8601> audit_rows=<n> idempotency_rows=<n> rounds=0`
+`slice1_retention_cleanup dry_run=True cutoff=<iso8601> audit_rows=<n> idempotency_rows=<n> outbound_delivery_rows_matched=<n> outbound_delivery_rows_deleted=0 rounds=0`
 
 (Exact numbers and timestamp depend on data; in dry-run, `dry_run=True` and `rounds=0` per current code.)
 

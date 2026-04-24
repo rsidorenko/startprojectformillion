@@ -2,8 +2,8 @@
 
 ## Status
 
-- **Design / documentation only.** This step does **not** change production code under `backend/src/`, and does **not** introduce a scheduler, CI wiring, or runtime automation.
-- **Not implemented:** a future scheduled job is **only specified here** for alignment before any coding or ops manifests.
+- **Partially implemented:** the shared retention **core** and **manual** CLI exist under `backend/src/`; a thin **scheduled wrapper** (`slice1_retention_scheduled_main`) reuses that core with explicit opt-in for destructive runs. This ADR remains the policy anchor for scope and safety; it is updated as tables are added to the same job.
+- **Not implemented here:** platform schedulers (cron, Kubernetes, etc.), CI wiring for the job, and background worker automation beyond the entrypoint module.
 
 ## Context
 
@@ -15,6 +15,7 @@ Manual retention exists today: core logic in `app.persistence.slice1_retention_m
 
 - `slice1_audit_events` by row age (cutoff from TTL).
 - `idempotency_records` where `completed = true`, by row age (same cutoff semantics as today’s core).
+- `slice1_uc01_outbound_deliveries` where `delivery_status = 'sent'` and `created_at` is before the same cutoff (UC-01 outbound delivery ledger). **`pending` rows are intentionally excluded** from count and delete in v1; stale `pending` / reconciler logic is a non-goal of this retention slice.
 
 **Out of scope for this ADR and for slice-1 retention in general:**
 
@@ -31,7 +32,7 @@ Manual retention exists today: core logic in `app.persistence.slice1_retention_m
 ## Safety guardrails
 
 - **Dry-run vs delete** must stay explicitly distinct: dry-run performs counts only; delete mode runs batched deletes (as in core logic today).
-- **Destructive mode** must be a separate **explicit opt-in** for automation (stricter than “forgot to set dry-run”); the exact mechanism is left to a later implementation, but the requirement is fixed here.
+- **Destructive mode** for automation uses the existing **scheduled-only** explicit opt-in (`SLICE1_RETENTION_SCHEDULED_ENABLE_DELETE`) in the wrapper; manual delete remains governed by `SLICE1_RETENTION_DRY_RUN` as in the manual runbooks.
 - **Batch limit** and **max rounds** remain mandatory upper bounds in configuration (align with `SLICE1_RETENTION_BATCH_LIMIT` and `SLICE1_RETENTION_MAX_ROUNDS` semantics).
 - **Overlapping runs** (e.g. two job instances) are an **operational risk**: double load, partial progress harder to reason about, and should be mitigated in ops design (lock/lease, single instance, or equivalent — **open question** below, not specified as code here).
 - **Completed idempotency** must not be pruned with an aggressive TTL: TTL must be **conservative** relative to acceptable replay and operational windows; this policy is **independent** of billing, issuance, and admin lifecycles.
@@ -50,7 +51,7 @@ Manual retention exists today: core logic in `app.persistence.slice1_retention_m
 
 ## Observability / audit expectations
 
-- **One** low-cardinality **summary** per run (compatible with a single line of aggregate metrics: dry-run flag, cutoff, total counts, rounds) — not bulk row dumps.
+- **One** low-cardinality **summary** per run (compatible with a single line of aggregate metrics: dry-run flag, cutoff, total counts including outbound ledger matched/deleted fields, rounds) — not bulk row dumps.
 - **Do not** log raw `DATABASE_URL` (or equivalent connection secrets).
 - **Do not** log idempotency keys or correlation ids **as lists** (or in bulk); prefer **counts and aggregates** only.
 - A future need for a **durable audit trail of job runs** (who/when/result) is acknowledged as an open design point; it must not leak sensitive payloads (see open questions).
