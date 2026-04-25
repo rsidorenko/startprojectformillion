@@ -11,7 +11,7 @@
 - The **current live runtime** is Telegram **polling** (`python -m app.runtime` → `telegram_httpx_live_main`); there is **no** admin HTTP listener in the polling process.
 - **ADM-01** exists in code as a **Starlette/ASGI** composition (`create_adm01_internal_http_app` and wiring) that maps JSON to `execute_adm01_endpoint` — a thin HTTP-oriented bridge over the existing domain handler, not a new business capability by itself.
 - The **in-process composition check** (`httpx.ASGITransport`, no TCP listen) validates the composed app against PostgreSQL-backed issuance where enabled; it does **not** establish network or production security.
-- **Production exposure** of the same app behind a real TCP listener would create a **new network and runtime boundary** (separate from polling), requiring explicit transport trust, bind policy, pool lifecycle, and operations agreements **before** any such code is merged.
+- **Production exposure** of the same app behind the implemented standalone listener path (`python -m app.internal_admin`) remains **opt-in** and constrained by this ADR's boundary controls: explicit transport trust, safe bind policy, pool lifecycle, and operations agreements. The listener stays off unless enabled-mode env is explicit and validation/safety checks pass.
 
 ---
 
@@ -63,7 +63,7 @@
 | `ADM01_INTERNAL_HTTP_BIND_INSECURE_ALL_INTERFACES` | Explicit opt-in required before binding all interfaces (`0.0.0.0`, `::`, `[::]`). |
 | `ADM01_INTERNAL_HTTP_TRUST_REVERSE_PROXY` | Marker that termination and client identity are enforced **outside** the app; required for certain non-loopback binds per code policy. |
 | `ADM01_INTERNAL_HTTP_REQUIRE_MTLS` | Marker for mutual TLS (or fail closed) at the implementation boundary; may be combined with reverse-proxy trust per code policy. |
-| `ADM01_INTERNAL_HTTP_ALLOWLIST` | Configuration surface for allowlisted `internal_admin_principal_id` values (format TBD at implementation: comma-separated, file path, or other; **not** part of `adm01_http_config.py` today). |
+| `ADM01_INTERNAL_HTTP_ALLOWLIST` | Required enabled-mode control for allowlisted `internal_admin_principal_id` values (implemented as comma-separated principal identifiers). Defense-in-depth only: does **not** replace transport trust (private network and trusted reverse proxy and/or mTLS). |
 | `DATABASE_URL` | Datasource class for PostgreSQL when issuance-backed read paths are composed (same class of secret as existing runtime; **never** log in observability or docs). |
 
 Runtime may reuse existing `APP_ENV` / `BOT_TOKEN` and `load_runtime_config` patterns (`backend/src/app/security/config.py`, `postgres_migrations_main`); the standalone process design should load database-related settings consistently with slice-1 Postgres usage **without** logging secrets.
@@ -117,11 +117,11 @@ Runtime may reuse existing `APP_ENV` / `BOT_TOKEN` and `load_runtime_config` pat
 
 ---
 
-## I. Test matrix (future implementation)
+## I. Test matrix (ongoing hardening)
 
-When listener and process code are added, extend beyond today’s coverage. **Already delivered:** config guard tests (enable/bind/insecure override/trust markers, no secret echo in errors) in `backend/tests/test_adm01_internal_http_config.py` — **reuse** and extend rather than duplicate.
+Now that listener/process entrypoint code exists, extend beyond today’s coverage. **Already delivered:** config guard tests (enable/bind/insecure override/trust markers, no secret echo in errors) in `backend/tests/test_adm01_internal_http_config.py` — **reuse** and extend rather than duplicate while preserving disabled-by-default and production-boundary assertions.
 
-**Additional candidates** when the server exists:
+**Additional candidates** for runtime-safety coverage:
 
 - Listener **disabled** by default at the process/entrypoint level when `ADM01_INTERNAL_HTTP_ENABLE` is off.
 - **Loopback** default for bind when enabled (unless explicit host override).
@@ -173,7 +173,8 @@ When listener and process code are added, extend beyond today’s coverage. **Al
 ## Changelog (documentation)
 
 - **Revision (331e11f):** Recorded that standalone entrypoint `python -m app.internal_admin` and bounded `uvicorn` dependency are implemented. Added/confirmed `ADM01_INTERNAL_HTTP_ALLOWLIST` as required enabled-mode configuration and kept network/transport constraints unchanged (private network + trusted reverse proxy and/or mTLS; no public internet default).
-- **Revision (post–config guards):** Documented that `Adm01InternalHttpConfig` and env guards are **implemented** (no listener). Recorded **uvicorn** as the intended ASGI server for the future standalone process; **hypercorn** noted as non-MVP alternative. Added explicit lifecycle: migrations → dedicated pool → build Starlette app → uvicorn listen → graceful shutdown. Updated non-goals and acceptance criteria accordingly.
+- **Revision (post–config guards, historical):** Documented the stage where `Adm01InternalHttpConfig` and env guards were implemented before listener delivery. At that time, **uvicorn** was recorded as intended ASGI server and **hypercorn** as non-MVP alternative; lifecycle expectations were captured as migrations → dedicated pool → build Starlette app → uvicorn listen → graceful shutdown.
+- **Current status:** Standalone entrypoint exists (`python -m app.internal_admin`); listener starts only in validated enabled mode with explicit `ADM01_INTERNAL_HTTP_*` env (including required allowlist), and production deployment controls in this ADR remain mandatory (private network + trusted reverse proxy and/or mTLS; no public internet default).
 - **Proposed ADR** introduced to fix production boundary, env contract, and process-model recommendation before any `ADM01_INTERNAL_HTTP_*` implementation.
 
 ---
