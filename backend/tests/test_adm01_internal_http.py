@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import httpx
 
@@ -267,5 +268,106 @@ def test_http_handler_exception_dependency_failure_safe_body() -> None:
         assert body["summary"] is None
         assert "traceback" not in body
         assert "RuntimeError" not in str(body)
+
+    _run(main())
+
+
+def test_http_response_contract_low_cardinality_stable_and_deny_redacted() -> None:
+    cid_success = new_correlation_id()
+    cid_deny = new_correlation_id()
+    expected_top_level_keys = {"outcome", "correlation_id", "summary"}
+    expected_summary_keys = {
+        "internal_user_id",
+        "subscription_state_label",
+        "entitlement_category",
+        "policy_flag",
+        "issuance_state",
+        "redaction",
+    }
+
+    async def main() -> None:
+        app_success = create_adm01_internal_http_app(
+            _RecordingHandler(_success_result(cid_success)),
+            _SuccessExtractor(),
+        )
+        success_resp = await _post_json(
+            app_success,
+            {
+                "correlation_id": cid_success,
+                "internal_admin_principal_id": "adm-1",
+                "internal_user_id": "u-42",
+            },
+        )
+        assert success_resp.status_code == 200
+        success_body = success_resp.json()
+        assert set(success_body.keys()) == expected_top_level_keys
+        assert success_body["outcome"] == "success"
+        assert success_body["correlation_id"] == cid_success
+        assert success_body["summary"] is not None
+        summary = success_body["summary"]
+        assert set(summary.keys()) == expected_summary_keys
+        assert summary["internal_user_id"] == "u-1"
+
+        # Lock low-cardinality strings for ADM-01 summary boundary.
+        assert summary["subscription_state_label"] in {
+            "active",
+            "inactive",
+            "absent",
+            "not_eligible",
+            "needs_review",
+        }
+        assert summary["entitlement_category"] in {v.value for v in EntitlementSummaryCategory}
+        assert summary["policy_flag"] in {v.value for v in AdminPolicyFlag}
+        assert summary["issuance_state"] in {v.value for v in IssuanceOperationalState}
+        assert summary["redaction"] in {v.value for v in RedactionMarker}
+
+        app_deny = create_adm01_internal_http_app(
+            _RecordingHandler(
+                Adm01LookupResult(
+                    outcome=Adm01LookupOutcome.DENIED,
+                    correlation_id=cid_deny,
+                    summary=None,
+                ),
+            ),
+            _SuccessExtractor(),
+        )
+        deny_resp = await _post_json(
+            app_deny,
+            {
+                "correlation_id": cid_deny,
+                "internal_admin_principal_id": "adm-1",
+                "internal_user_id": "u-42",
+            },
+        )
+        assert deny_resp.status_code == 200
+        deny_body = deny_resp.json()
+        assert set(deny_body.keys()) == expected_top_level_keys
+        assert deny_body["outcome"] == "denied"
+        assert deny_body["correlation_id"] == cid_deny
+        assert deny_body["summary"] is None
+
+        combined_repr = (
+            json.dumps(success_body, sort_keys=True)
+            + repr(success_body)
+            + json.dumps(deny_body, sort_keys=True)
+            + repr(deny_body)
+        )
+        forbidden_fragments = (
+            "provider_issuance_ref",
+            "issue_idempotency_key",
+            "internal_fact_ref",
+            "external_event_id",
+            "DATABASE_URL",
+            "postgres://",
+            "postgresql://",
+            "Bearer ",
+            "PRIVATE KEY",
+            "provider_payload",
+            "billing_payload",
+            "raw_provider_payload",
+            "raw_billing_payload",
+        )
+        for fragment in forbidden_fragments:
+            assert fragment not in combined_repr
 
     _run(main())
