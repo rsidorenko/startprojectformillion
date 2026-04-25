@@ -15,6 +15,7 @@ from app.bot_transport.outbound import (
     map_transport_safe_to_outbound_plan,
 )
 from app.bot_transport.presentation import (
+    TransportAccessResendCode,
     TransportResponseCategory,
     TransportSafeResponse,
     TransportStatusCode,
@@ -283,3 +284,21 @@ def test_guidance_without_next_action_hint_still_safe() -> None:
     assert plan.message_key == OutboundMessageKey.NEEDS_ONBOARDING.value
     assert plan.next_action_key is None
     assert plan.keyboard_marker == OutboundKeyboardMarker.NONE.value
+
+
+def test_resend_transport_codes_map_to_safe_outbound_keys() -> None:
+    cid = new_correlation_id()
+    safe = TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportAccessResendCode.RESEND_ACCEPTED.value,
+        correlation_id=cid,
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    assert plan.message_key == OutboundMessageKey.RESEND_ACCESS_ACCEPTED.value
+    safe_cooldown = TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportAccessResendCode.COOLDOWN.value,
+        correlation_id=cid,
+    )
+    plan2 = map_transport_safe_to_outbound_plan(safe_cooldown)
+    assert plan2.message_key == OutboundMessageKey.RESEND_ACCESS_COOLDOWN.value

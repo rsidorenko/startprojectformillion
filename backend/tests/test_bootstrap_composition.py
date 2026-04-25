@@ -134,6 +134,7 @@ def test_composition_has_no_extra_service_surface() -> None:
             "audit",
             "snapshots",
             "outbound_delivery",
+            "access_resend",
         },
     )
     for name in allowed:

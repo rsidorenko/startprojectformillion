@@ -7,6 +7,12 @@ from dataclasses import dataclass
 from typing import cast
 
 from app.application.handlers import BootstrapIdentityHandler, GetSubscriptionStatusHandler
+from app.application.telegram_access_resend import (
+    AccessResendCooldownStore,
+    InMemoryAccessResendCooldownStore,
+    IssuanceStateForResendLookup,
+    TelegramAccessResendHandler,
+)
 from app.application.interfaces import (
     AuditAppender,
     IdempotencyRepository,
@@ -23,6 +29,7 @@ from app.persistence.in_memory import (
     InMemorySubscriptionSnapshotReader,
     InMemoryUserIdentityRepository,
 )
+from app.issuance.service import IssuanceService
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +43,7 @@ class Slice1Composition:
     audit: AuditAppender
     snapshots: SubscriptionSnapshotReader
     outbound_delivery: OutboundDeliveryLedger
+    access_resend: TelegramAccessResendHandler
 
 
 def build_slice1_composition(
@@ -46,6 +54,9 @@ def build_slice1_composition(
     snapshots: SubscriptionSnapshotReader | None = None,
     audit: AuditAppender | None = None,
     outbound_delivery: OutboundDeliveryLedger | None = None,
+    issuance_service: IssuanceService | None = None,
+    issuance_state_lookup: IssuanceStateForResendLookup | None = None,
+    resend_cooldown: AccessResendCooldownStore | None = None,
 ) -> Slice1Composition:
     if (identity is None) ^ (idempotency is None):
         raise ValueError("identity and idempotency must both be provided or both omitted")
@@ -64,6 +75,7 @@ def build_slice1_composition(
         snapshots = InMemorySubscriptionSnapshotReader(initial_snapshots)
     snapshot_writer = cast(SubscriptionSnapshotWriter, snapshots)
     delivery = outbound_delivery or InMemoryOutboundDeliveryLedger()
+    cooldown = resend_cooldown or InMemoryAccessResendCooldownStore()
     return Slice1Composition(
         bootstrap=BootstrapIdentityHandler(identity, idempotency, audit, snapshot_writer),
         get_status=GetSubscriptionStatusHandler(identity, snapshots),
@@ -72,4 +84,11 @@ def build_slice1_composition(
         audit=audit,
         snapshots=snapshots,
         outbound_delivery=delivery,
+        access_resend=TelegramAccessResendHandler(
+            identity=identity,
+            snapshots=snapshots,
+            issuance_service=issuance_service,
+            issuance_state_lookup=issuance_state_lookup,
+            cooldown=cooldown,
+        ),
     )

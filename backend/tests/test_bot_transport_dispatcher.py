@@ -10,6 +10,7 @@ from app.application.interfaces import SubscriptionSnapshot
 from app.bot_transport.dispatcher import Slice1Dispatcher, dispatch_slice1_transport
 from app.bot_transport.normalized import TransportIncomingEnvelope
 from app.bot_transport.presentation import (
+    TransportAccessResendCode,
     TransportBootstrapCode,
     TransportErrorCode,
     TransportHelpCode,
@@ -203,6 +204,29 @@ def test_dispatch_help_then_start_only_bootstrap_audit() -> None:
         )
         assert s.code == TransportBootstrapCode.IDENTITY_READY.value
         assert len(await c.audit.recorded_events()) == 1
+
+    _run(main())
+
+
+def test_dispatch_resend_access_command_routes_to_resend_flow() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        r = await dispatch_slice1_transport(_env(cid=cid, uid=22, update_id=9, text="/resend_access"), c)
+        assert r.category is TransportResponseCategory.SUCCESS
+        assert r.code == TransportAccessResendCode.NOT_ELIGIBLE.value
+        assert r.correlation_id == cid
+
+    _run(main())
+
+
+def test_dispatch_get_access_alias_routes_to_resend_flow() -> None:
+    async def main() -> None:
+        c = build_slice1_composition()
+        cid = new_correlation_id()
+        r = await dispatch_slice1_transport(_env(cid=cid, uid=22, update_id=10, text="/get_access"), c)
+        assert r.category is TransportResponseCategory.SUCCESS
+        assert r.code == TransportAccessResendCode.NOT_ELIGIBLE.value
 
     _run(main())
 

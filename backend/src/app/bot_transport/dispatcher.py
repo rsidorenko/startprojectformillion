@@ -7,6 +7,7 @@ from app.bot_transport.normalized import (
     NormalizedSlice1Bootstrap,
     NormalizedSlice1Help,
     NormalizedSlice1Rejected,
+    NormalizedSlice1ResendAccess,
     NormalizedSlice1Status,
     TransportIncomingEnvelope,
     parse_slice1_transport,
@@ -16,6 +17,7 @@ from app.bot_transport.presentation import (
     TransportResponseCategory,
     TransportSafeResponse,
     map_bootstrap_identity_to_transport,
+    map_access_resend_to_transport,
     map_get_subscription_status_to_transport,
     map_slice1_help_to_transport,
 )
@@ -52,6 +54,9 @@ async def dispatch_slice1_transport(
         case NormalizedSlice1Status(input=status_input):
             result = await composition.get_status.handle(status_input)
             return map_get_subscription_status_to_transport(result)
+        case NormalizedSlice1ResendAccess(input=resend_input):
+            result = await composition.access_resend.handle(resend_input)
+            return map_access_resend_to_transport(result)
 
 
 class Slice1Dispatcher:

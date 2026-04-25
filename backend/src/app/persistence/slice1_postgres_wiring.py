@@ -8,14 +8,33 @@ from collections.abc import Awaitable, Callable
 import asyncpg
 
 from app.application.bootstrap import Slice1Composition, build_slice1_composition
+from app.application.telegram_access_resend import IssuanceCurrentStateRef
+from app.issuance.fake_provider import FakeIssuanceProvider, FakeProviderMode
+from app.issuance.service import IssuanceService
 from app.persistence.postgres_audit import PostgresAuditAppender
 from app.persistence.postgres_idempotency import PostgresIdempotencyRepository
+from app.persistence.postgres_issuance_state import PostgresIssuanceStateRepository
+from app.persistence.issuance_state_record import IssuanceStatePersistence
 from app.persistence.postgres_outbound_delivery import PostgresOutboundDeliveryLedger
 from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
 from app.persistence.postgres_user_identity import PostgresUserIdentityRepository
 from app.security.config import ConfigurationError, RuntimeConfig
 
 Slice1PostgresPoolOpener = Callable[[str], Awaitable[asyncpg.Pool]]
+
+
+class _PostgresIssuanceStateLookup:
+    def __init__(self, repo: PostgresIssuanceStateRepository) -> None:
+        self._repo = repo
+
+    async def get_current_for_user(self, internal_user_id: str) -> IssuanceCurrentStateRef | None:
+        row = await self._repo.get_current_for_user(internal_user_id)
+        if row is None:
+            return None
+        return IssuanceCurrentStateRef(
+            issue_idempotency_key=row.issue_idempotency_key,
+            is_revoked=(row.state is IssuanceStatePersistence.REVOKED),
+        )
 
 
 def slice1_postgres_repos_requested() -> bool:
@@ -48,7 +67,13 @@ async def resolve_slice1_composition_for_runtime(
     opener = open_pool or _default_open_pool
     pool = await opener(dsn)
 
+    issuance_state_repo = PostgresIssuanceStateRepository(pool)
     composition = build_slice1_composition(
+        issuance_service=IssuanceService(
+            FakeIssuanceProvider(FakeProviderMode.SUCCESS),
+            operational_state=issuance_state_repo,
+        ),
+        issuance_state_lookup=_PostgresIssuanceStateLookup(issuance_state_repo),
         identity=PostgresUserIdentityRepository(pool),
         idempotency=PostgresIdempotencyRepository(pool),
         snapshots=PostgresSubscriptionSnapshotReader(pool),

@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from enum import Enum
 
 from app.application.handlers import BootstrapIdentityResult, GetSubscriptionStatusResult
+from app.application.telegram_access_resend import (
+    TelegramAccessResendOutcome,
+    TelegramAccessResendResult,
+)
 from app.security.errors import UserSafeErrorCode
 from app.shared.types import OperationOutcomeCategory, SafeUserStatusCategory
 
@@ -43,6 +47,14 @@ class TransportHelpCode(str, Enum):
     """Read-only slice-1 help; no application handler, no state change."""
 
     SLICE1_HELP = "slice1_help"
+
+
+class TransportAccessResendCode(str, Enum):
+    RESEND_ACCEPTED = "resend_access_accepted"
+    NOT_ELIGIBLE = "resend_access_not_eligible"
+    COOLDOWN = "resend_access_cooldown"
+    NOT_READY = "resend_access_not_ready"
+    TEMPORARILY_UNAVAILABLE = "resend_access_temporarily_unavailable"
 
 
 class TransportNextActionHint(str, Enum):
@@ -153,3 +165,25 @@ def map_get_subscription_status_to_transport(
         )
 
     return _transport_error(TransportResponseCategory.ERROR, result.user_safe, cid)
+
+
+def map_access_resend_to_transport(result: TelegramAccessResendResult) -> TransportSafeResponse:
+    cid = result.correlation_id
+    if result.outcome is TelegramAccessResendOutcome.RESEND_ACCEPTED:
+        code = TransportAccessResendCode.RESEND_ACCEPTED.value
+    elif result.outcome is TelegramAccessResendOutcome.NOT_ELIGIBLE:
+        code = TransportAccessResendCode.NOT_ELIGIBLE.value
+    elif result.outcome is TelegramAccessResendOutcome.COOLDOWN:
+        code = TransportAccessResendCode.COOLDOWN.value
+    elif result.outcome is TelegramAccessResendOutcome.NOT_READY:
+        code = TransportAccessResendCode.NOT_READY.value
+    else:
+        code = TransportAccessResendCode.TEMPORARILY_UNAVAILABLE.value
+    return TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=code,
+        correlation_id=cid,
+        next_action_hint=None,
+        replay_suppresses_outbound=False,
+        uc01_idempotency_key=None,
+    )

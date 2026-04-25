@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from app.application.handlers import BootstrapIdentityInput, GetSubscriptionStatusInput
+from app.application.telegram_access_resend import TelegramAccessResendInput
 from app.security.validation import (
     ValidationError,
     validate_telegram_update_id,
@@ -19,6 +20,7 @@ _MAX_COMMAND_TOKEN_LEN = 64
 _SLICE1_BOOTSTRAP_COMMANDS: frozenset[str] = frozenset({"/start"})
 _SLICE1_STATUS_COMMANDS: frozenset[str] = frozenset({"/status"})
 _SLICE1_HELP_COMMANDS: frozenset[str] = frozenset({"/help"})
+_SLICE1_RESEND_COMMANDS: frozenset[str] = frozenset({"/resend_access", "/get_access"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +42,7 @@ class NormalizationRejectReason(str, Enum):
     UNKNOWN_COMMAND = "unknown_command"
     INVALID_INPUT = "invalid_input"
     MISSING_EVENT_ID_FOR_BOOTSTRAP = "missing_event_id_for_bootstrap"
+    MISSING_EVENT_ID_FOR_RESEND = "missing_event_id_for_resend"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +53,11 @@ class NormalizedSlice1Bootstrap:
 @dataclass(frozen=True, slots=True)
 class NormalizedSlice1Status:
     input: GetSubscriptionStatusInput
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedSlice1ResendAccess:
+    input: TelegramAccessResendInput
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +75,7 @@ class NormalizedSlice1Rejected:
 NormalizedSlice1Result = (
     NormalizedSlice1Bootstrap
     | NormalizedSlice1Status
+    | NormalizedSlice1ResendAccess
     | NormalizedSlice1Help
     | NormalizedSlice1Rejected
 )
@@ -131,6 +140,23 @@ def parse_slice1_transport(envelope: TransportIncomingEnvelope) -> NormalizedSli
         return NormalizedSlice1Status(
             input=GetSubscriptionStatusInput(
                 telegram_user_id=envelope.telegram_user_id,
+                correlation_id=envelope.correlation_id,
+            ),
+        )
+
+    if token in _SLICE1_RESEND_COMMANDS:
+        if envelope.telegram_update_id is None:
+            return NormalizedSlice1Rejected(
+                reason=NormalizationRejectReason.MISSING_EVENT_ID_FOR_RESEND,
+            )
+        try:
+            validate_telegram_update_id(envelope.telegram_update_id)
+        except ValidationError:
+            return NormalizedSlice1Rejected(reason=NormalizationRejectReason.INVALID_INPUT)
+        return NormalizedSlice1ResendAccess(
+            input=TelegramAccessResendInput(
+                telegram_user_id=envelope.telegram_user_id,
+                telegram_update_id=envelope.telegram_update_id,
                 correlation_id=envelope.correlation_id,
             ),
         )

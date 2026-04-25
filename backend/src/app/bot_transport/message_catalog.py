@@ -47,6 +47,8 @@ _CATALOG_TEXT: dict[str, str] = {
         "Command list in this build:\n"
         "/start - register and link this chat to your account\n"
         "/status - show the access or eligibility information the bot can read (unknown state stays fail-closed)\n"
+        "/resend_access - request a safe resend of access instructions (active accounts only)\n"
+        "/get_access - alias of /resend_access\n"
         "/help - show this list\n"
         "\n"
         "This preview is read-only for purchase flows and for sending connection material. "
@@ -57,6 +59,21 @@ _CATALOG_TEXT: dict[str, str] = {
         "Something went wrong. Please try again in a moment."
     ),
     OutboundMessageKey.SERVICE_UNAVAILABLE.value: _text_service_unavailable(),
+    OutboundMessageKey.RESEND_ACCESS_ACCEPTED.value: (
+        "Access instructions request accepted. If safe delivery is available, instructions will be resent."
+    ),
+    OutboundMessageKey.RESEND_ACCESS_NOT_ELIGIBLE.value: (
+        "Access instructions cannot be resent for this account right now."
+    ),
+    OutboundMessageKey.RESEND_ACCESS_COOLDOWN.value: (
+        "Please wait a moment before requesting access instructions again."
+    ),
+    OutboundMessageKey.RESEND_ACCESS_NOT_READY.value: (
+        "Access instructions are not ready to resend yet. Please try again later."
+    ),
+    OutboundMessageKey.RESEND_ACCESS_TEMPORARILY_UNAVAILABLE.value: (
+        "Access instructions resend is temporarily unavailable. Please try again later."
+    ),
 }
 
 _KNOWN_KEYS = frozenset(_CATALOG_TEXT.keys())

@@ -6,6 +6,7 @@ from dataclasses import fields
 
 from app.application.handlers import BootstrapIdentityResult, GetSubscriptionStatusResult
 from app.bot_transport.presentation import (
+    TransportAccessResendCode,
     TransportBootstrapCode,
     TransportHelpCode,
     TransportNextActionHint,
@@ -13,9 +14,11 @@ from app.bot_transport.presentation import (
     TransportSafeResponse,
     TransportStatusCode,
     map_bootstrap_identity_to_transport,
+    map_access_resend_to_transport,
     map_get_subscription_status_to_transport,
     map_slice1_help_to_transport,
 )
+from app.application.telegram_access_resend import TelegramAccessResendOutcome, TelegramAccessResendResult
 from app.security.errors import UserSafeErrorCode
 from app.shared.correlation import new_correlation_id
 from app.shared.types import OperationOutcomeCategory, SafeUserStatusCategory
@@ -196,3 +199,21 @@ def test_map_slice1_help_read_only() -> None:
         replay_suppresses_outbound=False,
         uc01_idempotency_key=None,
     )
+
+
+def test_access_resend_maps_to_stable_transport_codes() -> None:
+    cid = new_correlation_id()
+    accepted = map_access_resend_to_transport(
+        TelegramAccessResendResult(
+            outcome=TelegramAccessResendOutcome.RESEND_ACCEPTED,
+            correlation_id=cid,
+        )
+    )
+    assert accepted.code == TransportAccessResendCode.RESEND_ACCEPTED.value
+    cooldown = map_access_resend_to_transport(
+        TelegramAccessResendResult(
+            outcome=TelegramAccessResendOutcome.COOLDOWN,
+            correlation_id=cid,
+        )
+    )
+    assert cooldown.code == TransportAccessResendCode.COOLDOWN.value

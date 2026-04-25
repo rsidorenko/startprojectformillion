@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from app.bot_transport.presentation import (
+    TransportAccessResendCode,
     TransportBootstrapCode,
     TransportErrorCode,
     TransportHelpCode,
@@ -39,6 +40,11 @@ class OutboundMessageKey(str, Enum):
     TRY_AGAIN_LATER = "try_again_later"
     SERVICE_UNAVAILABLE = "service_unavailable"
     SLICE1_HELP = "slice1_help"
+    RESEND_ACCESS_ACCEPTED = "resend_access_accepted"
+    RESEND_ACCESS_NOT_ELIGIBLE = "resend_access_not_eligible"
+    RESEND_ACCESS_COOLDOWN = "resend_access_cooldown"
+    RESEND_ACCESS_NOT_READY = "resend_access_not_ready"
+    RESEND_ACCESS_TEMPORARILY_UNAVAILABLE = "resend_access_temporarily_unavailable"
 
 
 class OutboundNextActionKey(str, Enum):
@@ -115,6 +121,51 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,
                 replay_suppresses_outbound=False,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportAccessResendCode.RESEND_ACCEPTED.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.RESEND_ACCESS_ACCEPTED.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportAccessResendCode.NOT_ELIGIBLE.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.RESEND_ACCESS_NOT_ELIGIBLE.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportAccessResendCode.COOLDOWN.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.RESEND_ACCESS_COOLDOWN.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportAccessResendCode.NOT_READY.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.RESEND_ACCESS_NOT_READY.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportAccessResendCode.TEMPORARILY_UNAVAILABLE.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.RESEND_ACCESS_TEMPORARILY_UNAVAILABLE.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                correlation_id=cid,
                 uc01_idempotency_key=None,
             )
         if code == TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value:

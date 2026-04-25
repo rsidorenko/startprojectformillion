@@ -10,6 +10,7 @@ from app.bot_transport.normalized import (
     NormalizedSlice1Bootstrap,
     NormalizedSlice1Help,
     NormalizedSlice1Rejected,
+    NormalizedSlice1ResendAccess,
     NormalizedSlice1Status,
     TransportIncomingEnvelope,
     normalize_command_token,
@@ -103,6 +104,27 @@ def test_help_with_bot_suffix_normalized() -> None:
     assert r.correlation_id == cid
 
 
+def test_resend_access_maps_to_resend_input() -> None:
+    cid = new_correlation_id()
+    r = parse_slice1_transport(
+        TransportIncomingEnvelope(
+            telegram_user_id=55,
+            correlation_id=cid,
+            telegram_update_id=11,
+            normalized_command_text="/resend_access",
+        ),
+    )
+    assert isinstance(r, NormalizedSlice1ResendAccess)
+    assert r.input.telegram_user_id == 55
+    assert r.input.telegram_update_id == 11
+    assert r.input.correlation_id == cid
+
+
+def test_get_access_alias_maps_to_resend_input() -> None:
+    r = parse_slice1_transport(_env(cmd="/get_access", update_id=123))
+    assert isinstance(r, NormalizedSlice1ResendAccess)
+
+
 def test_unknown_command_rejected() -> None:
     r = parse_slice1_transport(_env(cmd="/unknown"))
     assert isinstance(r, NormalizedSlice1Rejected)
@@ -125,6 +147,12 @@ def test_invalid_update_id_rejected_for_bootstrap() -> None:
     r = parse_slice1_transport(_env(update_id=-1, cmd="/start"))
     assert isinstance(r, NormalizedSlice1Rejected)
     assert r.reason is NormalizationRejectReason.INVALID_INPUT
+
+
+def test_missing_update_id_rejected_for_resend() -> None:
+    r = parse_slice1_transport(_env(update_id=None, cmd="/resend_access"))
+    assert isinstance(r, NormalizedSlice1Rejected)
+    assert r.reason is NormalizationRejectReason.MISSING_EVENT_ID_FOR_RESEND
 
 
 def test_envelope_has_no_raw_payload_field() -> None:
