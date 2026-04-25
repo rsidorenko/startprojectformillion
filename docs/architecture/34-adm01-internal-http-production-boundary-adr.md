@@ -23,7 +23,7 @@
 | **A** | In-process mount in the same OS process as Telegram polling | **Allowed only** if a **strong single-process deployment constraint** is explicitly documented and accepted (e.g. single container PID limit, one binary policy); requires explicit pool/lifecycle analysis. |
 | **C** | No production HTTP mount; operator checks and in-process ASGI tests only | Valid when product/ops do not need a reachable admin HTTP endpoint in production; use existing advisory checks and runbooks. |
 
-**ASGI server for future standalone (Option B):** **uvicorn** is the **intended** ASGI HTTP server for the first standalone ADM-01 listener implementation, unless a later ADR supersedes this choice.
+**ASGI server for standalone (Option B):** **uvicorn** is the selected ASGI HTTP server for the ADM-01 standalone listener entrypoint, unless a later ADR supersedes this choice.
 
 **Rationale (uvicorn):**
 
@@ -51,15 +51,15 @@
 
 ## D. Environment / config contract
 
-**Implemented (guards only, no listener):** `backend/src/app/internal_admin/adm01_http_config.py` exposes `Adm01InternalHttpConfig`, `load_adm01_internal_http_config_from_env`, and `validate_adm01_internal_http_config`. These enforce bind and transport-trust policy when `ADM01_INTERNAL_HTTP_ENABLE` is true; when disabled, bind rules are inert. Tests live in `backend/tests/test_adm01_internal_http_config.py`.
+**Implemented (config guards + standalone entrypoint):** `backend/src/app/internal_admin/adm01_http_config.py` exposes `Adm01InternalHttpConfig`, `load_adm01_internal_http_config_from_env`, and `validate_adm01_internal_http_config`; standalone entrypoint `python -m app.internal_admin` starts listener mode only when explicitly enabled and validated. These enforce bind and transport-trust policy when `ADM01_INTERNAL_HTTP_ENABLE` is true; when disabled, no listener should start. Tests live in `backend/tests/test_adm01_internal_http_config.py`.
 
 **Environment variables (aligned with code):**
 
 | Name | Role |
 |------|------|
-| `ADM01_INTERNAL_HTTP_ENABLE` | Master switch: when unset or false, no standalone ADM-01 HTTP listener must be opened by a future process (and today nothing listens). |
+| `ADM01_INTERNAL_HTTP_ENABLE` | Master switch: when unset or false, standalone ADM-01 HTTP listener mode must remain off (disabled by default). |
 | `ADM01_INTERNAL_HTTP_BIND_HOST` | Bind address; defaults in code to loopback-friendly `127.0.0.1` when unset. |
-| `ADM01_INTERNAL_HTTP_BIND_PORT` | TCP port for a **future** listener (validated range in code). |
+| `ADM01_INTERNAL_HTTP_BIND_PORT` | TCP port for the standalone listener (validated range in code). |
 | `ADM01_INTERNAL_HTTP_BIND_INSECURE_ALL_INTERFACES` | Explicit opt-in required before binding all interfaces (`0.0.0.0`, `::`, `[::]`). |
 | `ADM01_INTERNAL_HTTP_TRUST_REVERSE_PROXY` | Marker that termination and client identity are enforced **outside** the app; required for certain non-loopback binds per code policy. |
 | `ADM01_INTERNAL_HTTP_REQUIRE_MTLS` | Marker for mutual TLS (or fail closed) at the implementation boundary; may be combined with reverse-proxy trust per code policy. |
@@ -89,11 +89,11 @@ Runtime may reuse existing `APP_ENV` / `BOT_TOKEN` and `load_runtime_config` pat
 
 ---
 
-## G. Pool, migrations, and lifecycle (future standalone process)
+## G. Pool, migrations, and lifecycle (standalone process)
 
 **Target process model:** Option **B** — a **dedicated** OS process for ADM-01 internal HTTP, **not** sharing an event loop or connection pool with Telegram polling.
 
-**Recommended startup and shutdown order (future implementation):**
+**Recommended startup and shutdown order:**
 
 1. Load **runtime / database** configuration from the environment (same secret discipline as today; patterns analogous to `load_runtime_config` and `postgres_migrations_main` — no new mandate to merge ADM-01 into a single config object unless the implementation PR chooses to).
 2. **Load and validate** ADM-01 internal HTTP settings via `load_adm01_internal_http_config_from_env` / `validate_adm01_internal_http_config`. If not enabled, the process must **not** open a listener and should exit cleanly according to the chosen entrypoint contract.
@@ -154,10 +154,10 @@ When listener and process code are added, extend beyond today’s coverage. **Al
 
 ---
 
-## L. Acceptance criteria for a future Agent implementation slice (informative)
+## L. Acceptance criteria for ongoing hardening slices (informative)
 
-- Add **`uvicorn`** (or documented supersession) as a **bounded** dependency in `backend/pyproject.toml` with justification tied to this ADR.
-- **Standalone entrypoint** for Option B: disabled by default when `ADM01_INTERNAL_HTTP_ENABLE` is off; no listener in that mode.
+- Keep **`uvicorn`** (or documented supersession) as a **bounded** dependency in `backend/pyproject.toml` with justification tied to this ADR.
+- Maintain **standalone entrypoint** behavior for Option B: disabled by default when `ADM01_INTERNAL_HTTP_ENABLE` is off; no listener in that mode.
 - **Reuse and extend** existing **config guard** tests; add tests for process/entrypoint and listener behavior as needed.
 - **Migrations applied before serving** read paths that depend on schema.
 - **Graceful shutdown** closes the pool and stops the listener in documented order.
