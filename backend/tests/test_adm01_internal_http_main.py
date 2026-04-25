@@ -9,6 +9,9 @@ import pytest
 from app.admin_support.adm01_postgres_subscription_read_adapter import (
     Adm01PostgresSubscriptionReadAdapter,
 )
+from app.admin_support.adm01_subscription_policy_read_adapter import (
+    Adm01SubscriptionPolicyReadAdapter,
+)
 from app.admin_support.adm01_subscription_entitlement_read_adapter import (
     Adm01SubscriptionEntitlementReadAdapter,
 )
@@ -97,7 +100,7 @@ async def test_enabled_happy_path_order_and_pool_closed(monkeypatch, capsys) -> 
             Adm01PostgresSubscriptionReadAdapter,
         )
         assert isinstance(deps.entitlement, Adm01SubscriptionEntitlementReadAdapter)
-        assert isinstance(deps.policy, main_mod._PolicyReadMinimal)
+        assert isinstance(deps.policy, Adm01SubscriptionPolicyReadAdapter)
         return asgi_app
 
     r = await main_mod.async_run_adm01_internal_http_from_env(

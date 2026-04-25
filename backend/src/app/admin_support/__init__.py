@@ -15,6 +15,9 @@ from app.admin_support.adm02_endpoint import (
 )
 from app.admin_support.adm01_lookup import Adm01LookupHandler
 from app.admin_support.adm01_postgres_issuance_read_adapter import Adm01PostgresIssuanceReadAdapter
+from app.admin_support.adm01_subscription_policy_read_adapter import (
+    Adm01SubscriptionPolicyReadAdapter,
+)
 from app.admin_support.adm02_fact_of_access_audit_adapter import (
     Adm02FactOfAccessPersistenceAuditAdapter,
 )
@@ -29,6 +32,7 @@ from app.admin_support.adm01_wiring import (
     build_adm01_internal_lookup_http_app,
     build_adm01_issuance_read_from_postgres_issuance_state,
     build_adm01_lookup_handler,
+    build_adm01_policy_read_from_postgres_snapshots,
 )
 from app.admin_support.adm02_wiring import build_adm02_internal_diagnostics_http_app
 from app.admin_support.authorization import AllowlistAdm01Authorization, AllowlistAdm02Authorization
@@ -104,6 +108,7 @@ __all__ = [
     "Adm01IssuanceReadPort",
     "Adm01LookupHandler",
     "Adm01PostgresIssuanceReadAdapter",
+    "Adm01SubscriptionPolicyReadAdapter",
     "Adm02AuthorizationPort",
     "Adm02BillingFactsCategory",
     "Adm02BillingFactsDiagnostics",
@@ -118,6 +123,7 @@ __all__ = [
     "build_adm01_entitlement_read_from_postgres_snapshots",
     "build_adm01_issuance_read_from_postgres_issuance_state",
     "build_adm01_lookup_handler",
+    "build_adm01_policy_read_from_postgres_snapshots",
     "build_adm02_internal_diagnostics_http_app",
     "Adm02DiagnosticsOutcome",
     "Adm02DiagnosticsResult",

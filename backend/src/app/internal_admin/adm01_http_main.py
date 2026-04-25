@@ -11,12 +11,10 @@ from typing import Any
 import asyncpg
 import uvicorn
 
-from app.admin_support.contracts import (
-    AdminPolicyFlag,
-    InternalUserTarget,
-)
+from app.admin_support.contracts import InternalUserTarget
 from app.admin_support.adm01_wiring import (
     build_adm01_entitlement_read_from_postgres_snapshots,
+    build_adm01_policy_read_from_postgres_snapshots,
     build_adm01_subscription_read_from_postgres_snapshots,
 )
 from app.internal_admin.adm01_bundle import (
@@ -44,11 +42,6 @@ class _IdentityEchoInternalUserId:
         if isinstance(target, InternalUserTarget):
             return target.internal_user_id
         return None
-
-
-class _PolicyReadMinimal:
-    async def get_policy_flag(self, internal_user_id: str) -> AdminPolicyFlag:
-        return AdminPolicyFlag.DEFAULT
 
 
 def _load_allowlist_principal_ids_from_env() -> tuple[str, ...]:
@@ -152,7 +145,7 @@ async def async_run_adm01_internal_http_from_env(
             subscription=build_adm01_subscription_read_from_postgres_snapshots(snapshots),
             entitlement=build_adm01_entitlement_read_from_postgres_snapshots(snapshots),
             postgres_issuance_state=repo,
-            policy=_PolicyReadMinimal(),
+            policy=build_adm01_policy_read_from_postgres_snapshots(snapshots),
             redaction=None,
             adm01_allowlisted_internal_admin_principal_ids=allowlist,
         )

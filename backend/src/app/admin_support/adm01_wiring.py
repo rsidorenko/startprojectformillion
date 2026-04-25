@@ -12,6 +12,9 @@ from app.admin_support.adm01_postgres_issuance_read_adapter import Adm01Postgres
 from app.admin_support.adm01_postgres_subscription_read_adapter import (
     Adm01PostgresSubscriptionReadAdapter,
 )
+from app.admin_support.adm01_subscription_policy_read_adapter import (
+    Adm01SubscriptionPolicyReadAdapter,
+)
 from app.admin_support.adm01_subscription_entitlement_read_adapter import (
     Adm01SubscriptionEntitlementReadAdapter,
 )
@@ -48,6 +51,13 @@ def build_adm01_entitlement_read_from_postgres_snapshots(
 ) -> Adm01EntitlementReadPort:
     """:class:`Adm01SubscriptionEntitlementReadAdapter` derives ADM-01 entitlement from snapshots."""
     return Adm01SubscriptionEntitlementReadAdapter(snapshots)
+
+
+def build_adm01_policy_read_from_postgres_snapshots(
+    snapshots: PostgresSubscriptionSnapshotReader,
+) -> Adm01PolicyReadPort:
+    """:class:`Adm01SubscriptionPolicyReadAdapter` derives ADM-01 policy from snapshots."""
+    return Adm01SubscriptionPolicyReadAdapter(snapshots)
 
 
 def build_adm01_lookup_handler(
