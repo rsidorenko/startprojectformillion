@@ -239,6 +239,7 @@ jobs:
             tests/test_postgres_uc05_apply_billing_fact.py \
             tests/test_postgres_billing_subscription_apply_main.py \
             tests/test_postgres_issuance_state.py \
+            tests/test_postgres_adm01_issuance_read_adapter.py \
             --junitxml="$REPORT_DIR/backend-postgres-retention-integration.xml"
 
       - name: Verify retention integration JUnit report

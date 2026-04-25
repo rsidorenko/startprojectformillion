@@ -14,6 +14,7 @@ from app.admin_support.adm02_endpoint import (
     execute_adm02_endpoint,
 )
 from app.admin_support.adm01_lookup import Adm01LookupHandler
+from app.admin_support.adm01_postgres_issuance_read_adapter import Adm01PostgresIssuanceReadAdapter
 from app.admin_support.adm02_fact_of_access_audit_adapter import (
     Adm02FactOfAccessPersistenceAuditAdapter,
 )
@@ -96,6 +97,7 @@ __all__ = [
     "Adm01IdentityResolvePort",
     "Adm01IssuanceReadPort",
     "Adm01LookupHandler",
+    "Adm01PostgresIssuanceReadAdapter",
     "Adm02AuthorizationPort",
     "Adm02BillingFactsCategory",
     "Adm02BillingFactsDiagnostics",
