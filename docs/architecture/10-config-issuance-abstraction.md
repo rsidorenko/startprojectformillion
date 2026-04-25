@@ -31,6 +31,8 @@
 
 **Этот шаг фиксирует**: язык и границы **MVP config issuance abstraction** так, чтобы реализация не смешивала entitlement truth, subscription lifecycle, billing truth и операционное состояние выдачи у провайдера.
 
+**MVP v1 (narrowing slice)**: [33 — Config issuance v1 — MVP design slice](33-config-issuance-v1-design.md) — предусловия, гейт, границы поставки и таксономия сбоев для первой согласованной реализации, без выбора провайдера.
+
 ---
 
 ### Scope: только MVP config issuance abstraction

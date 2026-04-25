@@ -277,7 +277,7 @@ Entitlement — это **решение** “можно ли выдавать/с
 
 ### Связь lifecycle с issuance
 
-Issuance — **операционный side-effect**, зависят от entitlement decision и issuance intent, а не напрямую от billing webhook.
+Issuance — **операционный side-effect**, зависят от entitlement decision и issuance intent, а не напрямую от billing webhook. Bounded v1 design: issuance только при согласованной энтайтлментности (в т.ч. `active` entitlement, fail-closed при `needs_review`) и с согласованной интерпретацией с `/status` — см. [33-config-issuance-v1-design.md](33-config-issuance-v1-design.md).
 
 - **Issuance может быть инициирован**, когда entitlement позволяет (обычно `active` + не blocked + не needs_review) и есть корректное намерение issue/rotate.
 - **Issuance must not happen**, когда entitlement не позволяет: `inactive`, `pending_payment`, `expired`, `needs_review`, `blocked_by_policy` (и любые доменные запреты).
