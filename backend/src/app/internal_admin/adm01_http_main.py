@@ -17,7 +17,9 @@ from app.admin_support.contracts import (
     EntitlementSummaryCategory,
     InternalUserTarget,
 )
-from app.application.interfaces import SubscriptionSnapshot
+from app.admin_support.adm01_wiring import (
+    build_adm01_subscription_read_from_postgres_snapshots,
+)
 from app.internal_admin.adm01_bundle import (
     Adm01InternalLookupWithPostgresIssuanceStateDependencies,
     build_adm01_internal_lookup_starlette_app_with_postgres_issuance_state,
@@ -27,6 +29,7 @@ from app.internal_admin.adm01_http_config import (
     load_adm01_internal_http_config_from_env,
 )
 from app.persistence.postgres_issuance_state import PostgresIssuanceStateRepository
+from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
 from app.persistence.postgres_migrations_runtime import apply_slice1_postgres_migrations_from_runtime_config
 from app.security.config import ConfigurationError, RuntimeConfig, load_runtime_config
 
@@ -42,11 +45,6 @@ class _IdentityEchoInternalUserId:
         if isinstance(target, InternalUserTarget):
             return target.internal_user_id
         return None
-
-
-class _SubscriptionReadMinimal:
-    async def get_subscription_snapshot(self, internal_user_id: str) -> SubscriptionSnapshot | None:
-        return SubscriptionSnapshot(internal_user_id=internal_user_id, state_label="inactive")
 
 
 class _EntitlementReadMinimal:
@@ -154,9 +152,10 @@ async def async_run_adm01_internal_http_from_env(
             return 1
 
         repo = PostgresIssuanceStateRepository(pool)
+        snapshots = PostgresSubscriptionSnapshotReader(pool)
         deps = Adm01InternalLookupWithPostgresIssuanceStateDependencies(
             identity=_IdentityEchoInternalUserId(),
-            subscription=_SubscriptionReadMinimal(),
+            subscription=build_adm01_subscription_read_from_postgres_snapshots(snapshots),
             entitlement=_EntitlementReadMinimal(),
             postgres_issuance_state=repo,
             policy=_PolicyReadMinimal(),

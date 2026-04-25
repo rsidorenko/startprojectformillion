@@ -6,6 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.admin_support.adm01_postgres_subscription_read_adapter import (
+    Adm01PostgresSubscriptionReadAdapter,
+)
 from app.internal_admin import adm01_http_main as main_mod
 from app.security.config import RuntimeConfig
 
@@ -86,6 +89,12 @@ async def test_enabled_happy_path_order_and_pool_closed(monkeypatch, capsys) -> 
 
     def track_build(deps: object) -> MagicMock:
         calls.append("build_app")
+        assert isinstance(
+            deps.subscription,
+            Adm01PostgresSubscriptionReadAdapter,
+        )
+        assert isinstance(deps.entitlement, main_mod._EntitlementReadMinimal)
+        assert isinstance(deps.policy, main_mod._PolicyReadMinimal)
         return asgi_app
 
     r = await main_mod.async_run_adm01_internal_http_from_env(

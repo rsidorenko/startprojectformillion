@@ -9,6 +9,9 @@ from starlette.applications import Starlette
 from app.admin_support.adm01_internal_http import create_adm01_internal_http_app
 from app.admin_support.adm01_lookup import Adm01LookupHandler
 from app.admin_support.adm01_postgres_issuance_read_adapter import Adm01PostgresIssuanceReadAdapter
+from app.admin_support.adm01_postgres_subscription_read_adapter import (
+    Adm01PostgresSubscriptionReadAdapter,
+)
 from app.admin_support.authorization import AllowlistAdm01Authorization
 from app.admin_support.contracts import (
     Adm01EntitlementReadPort,
@@ -20,6 +23,7 @@ from app.admin_support.contracts import (
 )
 from app.admin_support.principal_extraction import DefaultInternalAdminPrincipalExtractor
 from app.persistence.postgres_issuance_state import PostgresIssuanceStateRepository
+from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
 
 
 def build_adm01_issuance_read_from_postgres_issuance_state(
@@ -27,6 +31,13 @@ def build_adm01_issuance_read_from_postgres_issuance_state(
 ) -> Adm01IssuanceReadPort:
     """:class:`Adm01PostgresIssuanceReadAdapter` is the supported issuance port for Postgres-persisted state."""
     return Adm01PostgresIssuanceReadAdapter(repository)
+
+
+def build_adm01_subscription_read_from_postgres_snapshots(
+    snapshots: PostgresSubscriptionSnapshotReader,
+) -> Adm01SubscriptionReadPort:
+    """:class:`Adm01PostgresSubscriptionReadAdapter` is the supported ADM-01 subscription read for Postgres."""
+    return Adm01PostgresSubscriptionReadAdapter(snapshots)
 
 
 def build_adm01_lookup_handler(

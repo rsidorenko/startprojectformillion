@@ -15,8 +15,10 @@ from app.admin_support.adm01_internal_http import ADM01_INTERNAL_LOOKUP_PATH
 from app.admin_support.adm01_wiring import (
     build_adm01_internal_lookup_http_app,
     build_adm01_issuance_read_from_postgres_issuance_state,
+    build_adm01_subscription_read_from_postgres_snapshots,
 )
 from app.admin_support.adm01_postgres_issuance_read_adapter import Adm01PostgresIssuanceReadAdapter
+from app.admin_support.adm01_postgres_subscription_read_adapter import Adm01PostgresSubscriptionReadAdapter
 from app.admin_support.contracts import (
     AdminPolicyFlag,
     EntitlementSummary,
@@ -34,6 +36,7 @@ from app.internal_admin.adm01_bundle import (
 )
 from app.persistence.issuance_state_record import IssuanceStatePersistence, IssuanceStateRow
 from app.persistence.postgres_issuance_state import PostgresIssuanceStateRepository
+from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
 from app.shared.correlation import new_correlation_id
 
 _REF_MUST_NOT_LEAK = "issuance-ref:unit-wiring:cursor-leaktest-SECRET-SUFFIX-xyz"[:64]
@@ -129,6 +132,12 @@ def test_postgres_issuance_helper_wraps_repository() -> None:
     spec = MagicMock(spec=PostgresIssuanceStateRepository)
     p = build_adm01_issuance_read_from_postgres_issuance_state(spec)
     assert isinstance(p, Adm01PostgresIssuanceReadAdapter)
+
+
+def test_postgres_subscription_helper_wraps_reader() -> None:
+    spec = MagicMock(spec=PostgresSubscriptionSnapshotReader)
+    p = build_adm01_subscription_read_from_postgres_snapshots(spec)
+    assert isinstance(p, Adm01PostgresSubscriptionReadAdapter)
 
 
 def test_wiring_issued_ok_via_asgi() -> None:
