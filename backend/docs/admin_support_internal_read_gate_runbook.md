@@ -103,12 +103,13 @@ The **ADM-01 internal HTTP entrypoint smoke** (`check_adm01_internal_http_entryp
 
 ## Current delivery checkpoint
 
-Documentation-only marker tying this gate to a **published CI artifact** (no new runtime guarantees).
+Documentation-only marker tying this runbook to **published CI artifacts** on a validated workflow run (no new runtime guarantees).
 
-- **Branch / commit:** `main` @ `2c65a9c` (full SHA `2c65a9ced7c7798f320a3b0eb8ae8bc67f647332`).
-- **Workflow:** `backend-postgres-mvp-smoke-validation`; **run id** `24908572883`; **conclusion** `success`.
-- **Artifact:** `backend-postgres-mvp-smoke-validation-reports`; file `backend-admin-support-internal-read-gate-summary.txt` includes marker `internal_read_gate_outcome=success`.
-- **Reminder:** this remains **advisory** CI evidence for operator preflight semantics; it is **not** a blocking production network boundary, transport policy, or RBAC substitute.
+- **Branch / commit:** `main` @ `d5d03b6` (full SHA `d5d03b698841447965e4f253d2f66418fb0ac8ba`).
+- **Workflow:** `backend-postgres-mvp-smoke-validation`; **run id** `24937529370`; **conclusion** `success` (jobs `slice1-postgres-mvp-smoke` and `slice1-postgres-retention-integration` succeeded).
+- **ADM-01 internal HTTP entrypoint smoke** is a **blocking gate** on `slice1-postgres-mvp-smoke`; it checks only disabled/config-error paths with **no listener** and **no DB writes**, and **does not** prove production network safety. Artifact `backend-postgres-mvp-smoke-validation-reports` includes `backend-adm01-internal-http-entrypoint-smoke-summary.txt` with `adm01_entrypoint_smoke_outcome=success` on this run.
+- **Admin support internal read gate** (and full backend regression on that job) remain **advisory** as in **CI** above; the same artifact bundle includes `backend-admin-support-internal-read-gate-summary.txt` with `internal_read_gate_outcome=success` on this run.
+- **Reminder:** advisory checks and blocking entrypoint smoke are **not** substitutes for production network boundary, transport policy, or RBAC controls.
 
 Local command remains:
 
