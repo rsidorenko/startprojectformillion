@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import httpx
 
@@ -29,6 +30,30 @@ from app.admin_support.contracts import (
     RedactionMarker,
 )
 from app.shared.correlation import new_correlation_id
+
+_TOP_LEVEL_KEYS = frozenset({"outcome", "correlation_id", "summary"})
+_SUMMARY_KEYS = frozenset(
+    {
+        "billing_category",
+        "internal_fact_refs",
+        "quarantine_marker",
+        "quarantine_reason_code",
+        "reconciliation_last_run_marker",
+        "redaction",
+    }
+)
+_FORBIDDEN_FRAGMENTS = (
+    "database_url",
+    "postgres://",
+    "postgresql://",
+    "bearer ",
+    "private key",
+    "provider_issuance_ref",
+    "issue_idempotency_key",
+    "external_event_id",
+    "raw_payload",
+    "raw_webhook",
+)
 
 
 def _run(coro):
@@ -298,5 +323,84 @@ def test_http_non_object_json_400() -> None:
         r = await _post_raw(app, b"[]", "application/json")
         assert r.status_code == 400
         assert r.json() == {"error": "invalid_body"}
+
+    _run(main())
+
+
+def test_http_contract_locked_boundary_and_no_unexpected_fragments() -> None:
+    cid = new_correlation_id()
+    allowed_outcomes = {item.value for item in Adm02DiagnosticsOutcome}
+    allowed_billing_categories = {item.value for item in Adm02BillingFactsCategory}
+    allowed_quarantine_markers = {item.value for item in Adm02QuarantineMarker}
+    allowed_quarantine_reasons = {item.value for item in Adm02QuarantineReasonCode}
+    allowed_reconciliation_markers = {item.value for item in Adm02ReconciliationRunMarker}
+    allowed_redaction_markers = {item.value for item in RedactionMarker}
+
+    async def main() -> None:
+        app_success = create_adm02_internal_http_app(
+            _RecordingHandler(_success_result(cid, _full_summary())),
+            _SuccessExtractor(),
+        )
+        success_response = await _post_json(
+            app_success,
+            {
+                "correlation_id": cid,
+                "internal_admin_principal_id": "adm-1",
+                "internal_user_id": "u-42",
+            },
+        )
+        assert success_response.status_code == 200
+        success_body = success_response.json()
+        assert set(success_body.keys()) == _TOP_LEVEL_KEYS
+        assert success_body["outcome"] in allowed_outcomes
+        assert success_body["correlation_id"] == cid
+        assert isinstance(success_body["summary"], dict)
+        assert set(success_body["summary"].keys()) == _SUMMARY_KEYS
+        assert success_body["summary"]["billing_category"] in allowed_billing_categories
+        assert success_body["summary"]["quarantine_marker"] in allowed_quarantine_markers
+        assert success_body["summary"]["quarantine_reason_code"] in allowed_quarantine_reasons
+        assert (
+            success_body["summary"]["reconciliation_last_run_marker"]
+            in allowed_reconciliation_markers
+        )
+        assert success_body["summary"]["redaction"] in allowed_redaction_markers
+
+        success_payload = json.dumps(success_body, sort_keys=True).lower()
+        for forbidden in _FORBIDDEN_FRAGMENTS:
+            assert forbidden not in success_payload
+
+        for outcome in (
+            Adm02DiagnosticsOutcome.DENIED,
+            Adm02DiagnosticsOutcome.INVALID_INPUT,
+            Adm02DiagnosticsOutcome.DEPENDENCY_FAILURE,
+        ):
+            app_non_success = create_adm02_internal_http_app(
+                _RecordingHandler(
+                    Adm02DiagnosticsResult(
+                        outcome=outcome,
+                        correlation_id=cid,
+                        summary=_full_summary(),
+                    )
+                ),
+                _SuccessExtractor(),
+            )
+            non_success_response = await _post_json(
+                app_non_success,
+                {
+                    "correlation_id": cid,
+                    "internal_admin_principal_id": "adm-1",
+                    "internal_user_id": "u-1",
+                },
+            )
+            assert non_success_response.status_code == 200
+            non_success_body = non_success_response.json()
+            assert set(non_success_body.keys()) == _TOP_LEVEL_KEYS
+            assert non_success_body["outcome"] == outcome.value
+            assert non_success_body["correlation_id"] == cid
+            assert non_success_body["summary"] is None
+            assert "traceback" not in non_success_body
+            payload_lower = json.dumps(non_success_body, sort_keys=True).lower()
+            for forbidden in _FORBIDDEN_FRAGMENTS:
+                assert forbidden not in payload_lower
 
     _run(main())
