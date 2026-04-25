@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from dataclasses import asdict
 
 from app.admin_support.adm01_endpoint import Adm01InboundRequest, execute_adm01_endpoint
 from app.admin_support.principal_extraction import DefaultInternalAdminPrincipalExtractor
@@ -433,5 +435,85 @@ def test_endpoint_extractor_exception_short_circuits_to_dependency_failure() -> 
         assert r.outcome == Adm01LookupOutcome.DEPENDENCY_FAILURE.value
         assert r.correlation_id == cid
         assert r.summary is None
+
+    _run(main())
+
+
+def test_endpoint_response_contract_low_cardinality_stable_and_denied_redacted() -> None:
+    cid_success = new_correlation_id()
+    cid_deny = new_correlation_id()
+    expected_top_level_keys = {"outcome", "correlation_id", "summary"}
+    expected_summary_keys = {
+        "internal_user_id",
+        "subscription_state_label",
+        "entitlement_category",
+        "policy_flag",
+        "issuance_state",
+        "redaction",
+    }
+
+    async def main() -> None:
+        success_resp = await execute_adm01_endpoint(
+            _RecordingHandler(_success_result(cid_success)),
+            _SuccessExtractor(),
+            _req(cid=cid_success, internal_user_id="u-1"),
+        )
+        success_dict = asdict(success_resp)
+        assert set(success_dict.keys()) == expected_top_level_keys
+        assert success_resp.outcome == Adm01LookupOutcome.SUCCESS.value
+        assert success_resp.correlation_id == cid_success
+        assert success_resp.summary is not None
+
+        summary = success_resp.summary
+        assert summary is not None
+        summary_dict = asdict(summary)
+        assert set(summary_dict.keys()) == expected_summary_keys
+        assert summary.internal_user_id == "u-1"
+        assert summary.subscription_state_label in {
+            "active",
+            "inactive",
+            "absent",
+            "not_eligible",
+            "needs_review",
+        }
+        assert summary.entitlement_category in {v.value for v in EntitlementSummaryCategory}
+        assert summary.policy_flag in {v.value for v in AdminPolicyFlag}
+        assert summary.issuance_state in {v.value for v in IssuanceOperationalState}
+        assert summary.redaction in {v.value for v in RedactionMarker}
+
+        denied_resp = await execute_adm01_endpoint(
+            _RecordingHandler(_lookup_result(Adm01LookupOutcome.DENIED, cid_deny)),
+            _SuccessExtractor(),
+            _req(cid=cid_deny, internal_user_id="u-1"),
+        )
+        denied_dict = asdict(denied_resp)
+        assert set(denied_dict.keys()) == expected_top_level_keys
+        assert denied_resp.outcome == Adm01LookupOutcome.DENIED.value
+        assert denied_resp.correlation_id == cid_deny
+        assert denied_resp.summary is None
+
+        combined_repr = (
+            json.dumps(success_dict, sort_keys=True)
+            + repr(success_resp)
+            + json.dumps(denied_dict, sort_keys=True)
+            + repr(denied_resp)
+        )
+        forbidden_fragments = (
+            "provider_issuance_ref",
+            "issue_idempotency_key",
+            "internal_fact_ref",
+            "external_event_id",
+            "DATABASE_URL",
+            "postgres://",
+            "postgresql://",
+            "Bearer ",
+            "PRIVATE KEY",
+            "provider_payload",
+            "billing_payload",
+            "raw_provider_payload",
+            "raw_billing_payload",
+        )
+        for fragment in forbidden_fragments:
+            assert fragment not in combined_repr
 
     _run(main())
