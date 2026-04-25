@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -56,6 +57,19 @@ from app.shared.correlation import new_correlation_id
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+_FORBIDDEN_BOUNDARY_FRAGMENTS = (
+    "external_event_id",
+    "provider_issuance_ref",
+    "issue_idempotency_key",
+    "database_url",
+    "postgres://",
+    "postgresql://",
+    "bearer ",
+    "private key",
+    "raw_provider_payload",
+)
 
 
 class _IdentityFake:
@@ -352,6 +366,84 @@ def test_adm02_internal_http_composition_happy_path_real_chain() -> None:
     _run(main())
 
 
+def test_adm02_internal_http_composition_success_boundary_never_leaks_sensitive_internal_fragments() -> None:
+    cid = new_correlation_id()
+    identity = _IdentityFake("u-resolved")
+    ledger = InMemoryBillingEventsLedgerRepository()
+    billing = Adm02BillingFactsLedgerReadAdapter(ledger)
+    quarantine_repo = InMemoryMismatchQuarantineRepository()
+    quarantine = Adm02QuarantineMismatchReadAdapter(quarantine_repo)
+    recon_repo = InMemoryReconciliationRunsRepository()
+    reconciliation = Adm02ReconciliationRunsReadAdapter(recon_repo)
+    persisted = InMemoryAdm02FactOfAccessRecordAppender()
+    audit = Adm02FactOfAccessPersistenceAuditAdapter(
+        appender=persisted,
+        now_provider=lambda: datetime(2026, 4, 16, 12, 34, 56, tzinfo=UTC),
+    )
+    handler = Adm02DiagnosticsHandler(
+        authorization=AllowlistAdm02Authorization(["adm-allowed"]),
+        identity=identity,
+        billing=billing,
+        quarantine=quarantine,
+        reconciliation=reconciliation,
+        audit=audit,
+        redaction=None,
+    )
+    app = create_adm02_internal_http_app(handler, DefaultInternalAdminPrincipalExtractor())
+
+    async def main() -> None:
+        await ledger.append_or_get_by_provider_and_external_id(
+            _make_billing_record(
+                internal_fact_ref="be-safe-1",
+                internal_user_id="u-resolved",
+                external_event_id=(
+                    "external_event_id/provider_issuance_ref/issue_idempotency_key/"
+                    "DATABASE_URL/postgres://postgresql://Bearer PRIVATE KEY/raw_provider_payload"
+                ),
+            )
+        )
+        await quarantine_repo.upsert_by_source(
+            _make_mismatch_quarantine_record(
+                record_id="mq-sensitive-source",
+                source_ref_id="raw_provider_payload/provider_issuance_ref/issue_idempotency_key",
+                internal_user_id="u-resolved",
+                reason_code=MismatchQuarantineReasonCode.NEEDS_REVIEW,
+                created_at=datetime(2026, 4, 16, 13, 0, 0, tzinfo=UTC),
+                updated_at=datetime(2026, 4, 16, 13, 0, 0, tzinfo=UTC),
+            )
+        )
+        await recon_repo.append_run_record(
+            _make_reconciliation_run_record(
+                run_id="external_event_id/raw_provider_payload",
+                internal_user_id="u-resolved",
+                outcome=ReconciliationRunOutcome.FACTS_DISCOVERED,
+                started_at=datetime(2026, 4, 16, 11, 0, 0, tzinfo=UTC),
+            )
+        )
+
+        r = await _post_json(
+            app,
+            {
+                "correlation_id": cid,
+                "internal_admin_principal_id": "adm-allowed",
+                "internal_user_id": "u-target",
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["outcome"] == "success"
+        assert body["summary"] is not None
+        assert body["summary"]["internal_fact_refs"] == ["be-safe-1"]
+
+        payload_lower = json.dumps(body, sort_keys=True).lower()
+        for forbidden in _FORBIDDEN_BOUNDARY_FRAGMENTS:
+            assert forbidden not in payload_lower
+        assert "internal_fact_refs" in payload_lower
+        assert identity.calls == 1
+
+    _run(main())
+
+
 def test_adm02_internal_http_composition_redaction_partial_success_real_chain() -> None:
     cid = new_correlation_id()
     expected_now = datetime(2026, 4, 16, 12, 34, 56, tzinfo=UTC)
@@ -491,6 +583,91 @@ def test_adm02_internal_http_composition_redaction_partial_success_real_chain() 
         assert rec.internal_user_scope_ref == "u-resolved"
         assert rec.correlation_id == cid
         assert rec.disclosure is Adm02FactOfAccessDisclosureCategory.PARTIAL
+
+    _run(main())
+
+
+def test_adm02_internal_http_composition_redaction_and_audit_disclosure_stay_low_cardinality() -> None:
+    cid = new_correlation_id()
+    expected_now = datetime(2026, 4, 16, 12, 34, 56, tzinfo=UTC)
+    identity = _IdentityFake("u-resolved")
+    redaction = _RedactionCallsStub()
+    ledger = InMemoryBillingEventsLedgerRepository()
+    billing = Adm02BillingFactsLedgerReadAdapter(ledger)
+    quarantine_repo = InMemoryMismatchQuarantineRepository()
+    quarantine = Adm02QuarantineMismatchReadAdapter(quarantine_repo)
+    recon_repo = InMemoryReconciliationRunsRepository()
+    reconciliation = Adm02ReconciliationRunsReadAdapter(recon_repo)
+    persisted = InMemoryAdm02FactOfAccessRecordAppender()
+    audit = Adm02FactOfAccessPersistenceAuditAdapter(
+        appender=persisted,
+        now_provider=lambda: expected_now,
+    )
+    handler = Adm02DiagnosticsHandler(
+        authorization=AllowlistAdm02Authorization(["adm-allowed"]),
+        identity=identity,
+        billing=billing,
+        quarantine=quarantine,
+        reconciliation=reconciliation,
+        audit=audit,
+        redaction=redaction,
+    )
+    app = create_adm02_internal_http_app(handler, DefaultInternalAdminPrincipalExtractor())
+
+    async def main() -> None:
+        await ledger.append_or_get_by_provider_and_external_id(
+            _make_billing_record(
+                internal_fact_ref="be-safe-1",
+                internal_user_id="u-resolved",
+                external_event_id="postgres://raw_provider_payload",
+            )
+        )
+        await quarantine_repo.upsert_by_source(
+            _make_mismatch_quarantine_record(
+                record_id="mq-1",
+                source_ref_id="provider_issuance_ref",
+                internal_user_id="u-resolved",
+                reason_code=MismatchQuarantineReasonCode.NEEDS_REVIEW,
+                created_at=datetime(2026, 4, 16, 13, 0, 0, tzinfo=UTC),
+                updated_at=datetime(2026, 4, 16, 13, 0, 0, tzinfo=UTC),
+            )
+        )
+        await recon_repo.append_run_record(
+            _make_reconciliation_run_record(
+                run_id="issue_idempotency_key",
+                internal_user_id="u-resolved",
+                outcome=ReconciliationRunOutcome.FACTS_DISCOVERED,
+                started_at=datetime(2026, 4, 16, 11, 0, 0, tzinfo=UTC),
+            )
+        )
+
+        r = await _post_json(
+            app,
+            {
+                "correlation_id": cid,
+                "internal_admin_principal_id": "adm-allowed",
+                "internal_user_id": "u-target",
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["outcome"] == "success"
+        assert body["summary"] is not None
+        assert body["summary"]["redaction"] in {marker.value for marker in RedactionMarker}
+        payload_lower = json.dumps(body, sort_keys=True).lower()
+        for forbidden in _FORBIDDEN_BOUNDARY_FRAGMENTS:
+            assert forbidden not in payload_lower
+
+        recorded = await persisted.recorded_for_tests()
+        assert len(recorded) == 1
+        disclosure_value = recorded[0].disclosure.value
+        assert disclosure_value in {
+            category.value for category in Adm02FactOfAccessDisclosureCategory
+        }
+        assert disclosure_value in {"unredacted", "partial", "fully_redacted"}
+        disclosure_lower = disclosure_value.lower()
+        for forbidden in _FORBIDDEN_BOUNDARY_FRAGMENTS:
+            assert forbidden not in disclosure_lower
 
     _run(main())
 

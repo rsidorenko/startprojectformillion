@@ -299,6 +299,47 @@ def test_http_handler_exception_dependency_failure_safe_body() -> None:
     _run(main())
 
 
+def test_http_dependency_failure_exception_message_never_leaks_sensitive_fragments() -> None:
+    cid = new_correlation_id()
+    sensitive_error = (
+        "traceback RuntimeError external_event_id provider_issuance_ref "
+        "issue_idempotency_key DATABASE_URL postgres:// postgresql:// "
+        "Bearer SECRET PRIVATE KEY raw_provider_payload"
+    )
+
+    class _SensitiveExplodingHandler:
+        async def handle(self, inp: Adm02DiagnosticsInput) -> Adm02DiagnosticsResult:
+            raise RuntimeError(sensitive_error)
+
+    async def main() -> None:
+        app = create_adm02_internal_http_app(
+            _SensitiveExplodingHandler(),
+            _SuccessExtractor(),
+        )
+        r = await _post_json(
+            app,
+            {
+                "correlation_id": cid,
+                "internal_admin_principal_id": "adm-1",
+                "internal_user_id": "u-1",
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["outcome"] == "dependency_failure"
+        assert body["correlation_id"] == cid
+        assert body["summary"] is None
+
+        payload_lower = json.dumps(body, sort_keys=True).lower()
+        for forbidden in _FORBIDDEN_FRAGMENTS:
+            assert forbidden not in payload_lower
+        assert "raw_provider_payload" not in payload_lower
+        assert "traceback" not in payload_lower
+        assert "runtimeerror" not in payload_lower
+
+    _run(main())
+
+
 def test_http_invalid_json_400() -> None:
     async def main() -> None:
         cid = new_correlation_id()
