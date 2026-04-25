@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from app.admin_support.adm01_subscription_state_mapping import (
+    Adm01SnapshotStateKind,
+    classify_adm01_subscription_snapshot,
+)
 from app.admin_support.contracts import AdminPolicyFlag, Adm01PolicyReadPort
 from app.application.interfaces import SubscriptionSnapshot
-from app.shared.types import SubscriptionSnapshotState
 
 
 @runtime_checkable
@@ -32,22 +35,14 @@ class Adm01SubscriptionPolicyReadAdapter(Adm01PolicyReadPort):
 
     async def get_policy_flag(self, internal_user_id: str) -> AdminPolicyFlag:
         snapshot = await self._snapshots.get_for_user(internal_user_id)
-        if snapshot is None:
+        kind = classify_adm01_subscription_snapshot(snapshot)
+        if kind is Adm01SnapshotStateKind.MISSING_OR_UNKNOWN:
             return AdminPolicyFlag.UNKNOWN
-
-        try:
-            state = SubscriptionSnapshotState(snapshot.state_label)
-        except ValueError:
-            return AdminPolicyFlag.UNKNOWN
-
-        if state is SubscriptionSnapshotState.NEEDS_REVIEW:
+        if kind is Adm01SnapshotStateKind.NEEDS_REVIEW:
             return AdminPolicyFlag.ENFORCE_MANUAL_REVIEW
-
-        if state in (
-            SubscriptionSnapshotState.ACTIVE,
-            SubscriptionSnapshotState.INACTIVE,
-            SubscriptionSnapshotState.ABSENT,
-            SubscriptionSnapshotState.NOT_ELIGIBLE,
+        if kind in (
+            Adm01SnapshotStateKind.ACTIVE,
+            Adm01SnapshotStateKind.OTHER_NON_ACTIVE,
         ):
             return AdminPolicyFlag.DEFAULT
 

@@ -9,8 +9,11 @@ from app.admin_support.contracts import (
     EntitlementSummary,
     EntitlementSummaryCategory,
 )
+from app.admin_support.adm01_subscription_state_mapping import (
+    Adm01SnapshotStateKind,
+    classify_adm01_subscription_snapshot,
+)
 from app.application.interfaces import SubscriptionSnapshot
-from app.shared.types import SubscriptionSnapshotState
 
 
 @runtime_checkable
@@ -36,22 +39,14 @@ class Adm01SubscriptionEntitlementReadAdapter(Adm01EntitlementReadPort):
 
     async def get_entitlement_summary(self, internal_user_id: str) -> EntitlementSummary:
         snapshot = await self._snapshots.get_for_user(internal_user_id)
-        if snapshot is None:
+        kind = classify_adm01_subscription_snapshot(snapshot)
+        if kind is Adm01SnapshotStateKind.MISSING_OR_UNKNOWN:
             return EntitlementSummary(category=EntitlementSummaryCategory.UNKNOWN)
-
-        try:
-            state = SubscriptionSnapshotState(snapshot.state_label)
-        except ValueError:
-            return EntitlementSummary(category=EntitlementSummaryCategory.UNKNOWN)
-
-        if state is SubscriptionSnapshotState.ACTIVE:
+        if kind is Adm01SnapshotStateKind.ACTIVE:
             return EntitlementSummary(category=EntitlementSummaryCategory.ACTIVE)
-
-        if state in (
-            SubscriptionSnapshotState.ABSENT,
-            SubscriptionSnapshotState.INACTIVE,
-            SubscriptionSnapshotState.NOT_ELIGIBLE,
-            SubscriptionSnapshotState.NEEDS_REVIEW,
+        if kind in (
+            Adm01SnapshotStateKind.NEEDS_REVIEW,
+            Adm01SnapshotStateKind.OTHER_NON_ACTIVE,
         ):
             return EntitlementSummary(category=EntitlementSummaryCategory.INACTIVE)
 
