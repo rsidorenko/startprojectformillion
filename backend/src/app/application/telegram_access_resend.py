@@ -52,6 +52,12 @@ class TelegramAccessResendResult:
 
 
 @dataclass(frozen=True, slots=True)
+class TelegramAccessResendDisabledHitEvent:
+    operation: str = "telegram_access_resend"
+    outcome: str = "not_enabled"
+
+
+@dataclass(frozen=True, slots=True)
 class IssuanceCurrentStateRef:
     issue_idempotency_key: str
     is_revoked: bool
@@ -63,6 +69,15 @@ class IssuanceStateForResendLookup(Protocol):
 
 class AccessResendCooldownStore(Protocol):
     async def consume_or_reject(self, internal_user_id: str, now_epoch_seconds: float) -> bool: ...
+
+
+class TelegramAccessResendDisabledHitMarker(Protocol):
+    def record_disabled_hit(self, event: TelegramAccessResendDisabledHitEvent) -> None: ...
+
+
+class NoopTelegramAccessResendDisabledHitMarker:
+    def record_disabled_hit(self, event: TelegramAccessResendDisabledHitEvent) -> None:
+        return None
 
 
 class InMemoryAccessResendCooldownStore:
@@ -102,6 +117,7 @@ class TelegramAccessResendHandler:
         issuance_service: IssuanceService | None,
         issuance_state_lookup: IssuanceStateForResendLookup | None,
         cooldown: AccessResendCooldownStore,
+        disabled_hit_marker: TelegramAccessResendDisabledHitMarker | None = None,
         enabled: bool,
         now_seconds: Callable[[], float] = time.time,
     ) -> None:
@@ -110,6 +126,7 @@ class TelegramAccessResendHandler:
         self._issuance_service = issuance_service
         self._issuance_state_lookup = issuance_state_lookup
         self._cooldown = cooldown
+        self._disabled_hit_marker = disabled_hit_marker or NoopTelegramAccessResendDisabledHitMarker()
         self._enabled = enabled
         self._now_seconds = now_seconds
 
@@ -123,6 +140,11 @@ class TelegramAccessResendHandler:
                 correlation_id=cid,
             )
         if not self._enabled:
+            try:
+                self._disabled_hit_marker.record_disabled_hit(TelegramAccessResendDisabledHitEvent())
+            except Exception:
+                # Telemetry marker must not change fail-closed user-visible behavior.
+                pass
             return TelegramAccessResendResult(
                 outcome=TelegramAccessResendOutcome.NOT_ENABLED,
                 correlation_id=cid,

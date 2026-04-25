@@ -6,6 +6,7 @@ from app.application.interfaces import IdentityRecord, SubscriptionSnapshot
 from app.application.telegram_access_resend import (
     InMemoryAccessResendCooldownStore,
     IssuanceCurrentStateRef,
+    TelegramAccessResendDisabledHitEvent,
     TelegramAccessResendHandler,
     TelegramAccessResendInput,
     TelegramAccessResendOutcome,
@@ -57,6 +58,26 @@ class _ServiceSpy:
         return self.result
 
 
+class _CooldownSpy:
+    def __init__(self, *, allowed: bool = True) -> None:
+        self.calls = 0
+        self._allowed = allowed
+
+    async def consume_or_reject(self, internal_user_id: str, now_epoch_seconds: float) -> bool:
+        self.calls += 1
+        return self._allowed
+
+
+class _DisabledMarkerSpy:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.events: list[TelegramAccessResendDisabledHitEvent] = []
+
+    def record_disabled_hit(self, event: TelegramAccessResendDisabledHitEvent) -> None:
+        self.calls += 1
+        self.events.append(event)
+
+
 def _inp(update_id: int = 10) -> TelegramAccessResendInput:
     return TelegramAccessResendInput(
         telegram_user_id=42,
@@ -70,6 +91,7 @@ async def test_active_entitled_calls_issuance_resend() -> None:
     service = _ServiceSpy(
         IssuanceServiceResult(category=IssuanceOutcomeCategory.DELIVERY_READY, safe_ref="x")
     )
+    marker = _DisabledMarkerSpy()
     h = TelegramAccessResendHandler(
         identity=_IdentityRepo(IdentityRecord(internal_user_id="u42", telegram_user_id=42)),
         snapshots=_Snapshots(SubscriptionSnapshot(internal_user_id="u42", state_label="active")),
@@ -78,6 +100,7 @@ async def test_active_entitled_calls_issuance_resend() -> None:
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
+        disabled_hit_marker=marker,
         enabled=True,
         now_seconds=lambda: 1000.0,
     )
@@ -87,6 +110,7 @@ async def test_active_entitled_calls_issuance_resend() -> None:
     assert service.last_request.operation.value == "resend"
     assert service.last_request.link_issue_idempotency_key == "issue-1"
     assert service.last_request.idempotency_key == "tg-resend:42:333"
+    assert marker.calls == 0
 
 
 @pytest.mark.asyncio
@@ -206,18 +230,46 @@ async def test_flag_disabled_short_circuits_before_entitlement_cooldown_and_issu
         IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
     )
     service = _ServiceSpy(IssuanceServiceResult(category=IssuanceOutcomeCategory.DELIVERY_READY))
+    cooldown = _CooldownSpy(allowed=True)
+    marker = _DisabledMarkerSpy()
     h = TelegramAccessResendHandler(
         identity=identity,
         snapshots=snapshots,
         issuance_service=service,  # type: ignore[arg-type]
         issuance_state_lookup=state_lookup,
-        cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
+        cooldown=cooldown,
+        disabled_hit_marker=marker,
         enabled=False,
         now_seconds=lambda: 100.0,
     )
     out = await h.handle(_inp())
     assert out.outcome is TelegramAccessResendOutcome.NOT_ENABLED
+    assert marker.calls == 1
+    assert marker.events == [TelegramAccessResendDisabledHitEvent()]
     assert identity.calls == 0
     assert snapshots.calls == 0
+    assert cooldown.calls == 0
     assert state_lookup.calls == 0
     assert service.calls == 0
+
+
+def test_disabled_hit_event_contains_only_bounded_safe_fields() -> None:
+    event = TelegramAccessResendDisabledHitEvent()
+    payload = {"operation": event.operation, "outcome": event.outcome}
+    assert payload == {"operation": "telegram_access_resend", "outcome": "not_enabled"}
+    blob = f"{payload}".lower()
+    forbidden = (
+        "telegram_user_id",
+        "internal_user_id",
+        "chat_id",
+        "message_text",
+        "payload",
+        "idempotency_key",
+        "provider_issuance_ref",
+        "database_url",
+        "postgres://",
+        "bearer ",
+        "private key",
+    )
+    for key in forbidden:
+        assert key not in blob

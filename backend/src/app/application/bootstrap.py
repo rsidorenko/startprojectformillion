@@ -12,6 +12,7 @@ from app.application.telegram_access_resend import (
     AccessResendCooldownStore,
     InMemoryAccessResendCooldownStore,
     IssuanceStateForResendLookup,
+    TelegramAccessResendDisabledHitMarker,
     TelegramAccessResendHandler,
     telegram_access_resend_enabled_from_env,
 )
@@ -59,6 +60,7 @@ def build_slice1_composition(
     issuance_service: IssuanceService | None = None,
     issuance_state_lookup: IssuanceStateForResendLookup | None = None,
     resend_cooldown: AccessResendCooldownStore | None = None,
+    resend_disabled_hit_marker: TelegramAccessResendDisabledHitMarker | None = None,
     access_resend_enabled: bool | None = None,
 ) -> Slice1Composition:
     if (identity is None) ^ (idempotency is None):
@@ -98,6 +100,7 @@ def build_slice1_composition(
             issuance_service=issuance_service,
             issuance_state_lookup=issuance_state_lookup,
             cooldown=cooldown,
+            disabled_hit_marker=resend_disabled_hit_marker,
             enabled=enabled,
         ),
     )

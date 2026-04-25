@@ -26,6 +26,14 @@ from app.shared.types import (
 )
 
 
+class _CompositionDisabledHitMarkerSpy:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def record_disabled_hit(self, event) -> None:  # noqa: ANN001
+        self.calls += 1
+
+
 def _run(coro):
     return asyncio.run(coro)
 
@@ -202,6 +210,41 @@ def test_access_resend_default_env_is_disabled(monkeypatch: pytest.MonkeyPatch) 
             )
         )
         assert out.outcome is TelegramAccessResendOutcome.NOT_ENABLED
+
+    _run(main())
+
+
+def test_access_resend_default_composition_uses_noop_disabled_marker() -> None:
+    async def main() -> None:
+        c = build_slice1_composition(access_resend_enabled=False)
+        out = await c.access_resend.handle(
+            TelegramAccessResendInput(
+                telegram_user_id=1,
+                telegram_update_id=1,
+                correlation_id=new_correlation_id(),
+            )
+        )
+        assert out.outcome is TelegramAccessResendOutcome.NOT_ENABLED
+
+    _run(main())
+
+
+def test_access_resend_composition_accepts_injected_disabled_marker() -> None:
+    async def main() -> None:
+        spy = _CompositionDisabledHitMarkerSpy()
+        c = build_slice1_composition(
+            access_resend_enabled=False,
+            resend_disabled_hit_marker=spy,
+        )
+        out = await c.access_resend.handle(
+            TelegramAccessResendInput(
+                telegram_user_id=1,
+                telegram_update_id=1,
+                correlation_id=new_correlation_id(),
+            )
+        )
+        assert out.outcome is TelegramAccessResendOutcome.NOT_ENABLED
+        assert spy.calls == 1
 
     _run(main())
 
