@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import asyncio
 
-from dataclasses import replace
+from dataclasses import asdict, replace
+import json
 
 
 
@@ -51,6 +52,21 @@ from app.admin_support.contracts import (
 )
 
 from app.shared.correlation import new_correlation_id
+
+
+_FORBIDDEN_FRAGMENTS = (
+    "external_event_id",
+    "provider_issuance_ref",
+    "issue_idempotency_key",
+    "database_url",
+    "postgres://",
+    "postgresql://",
+    "bearer ",
+    "private key",
+    "raw_provider_payload",
+    "traceback",
+    "runtimeerror",
+)
 
 
 
@@ -185,6 +201,17 @@ class _BillingRaise:
         raise RuntimeError("billing read failed")
 
 
+class _BillingRaiseSensitive:
+
+    async def get_billing_facts_diagnostics(self, internal_user_id: str) -> Adm02BillingFactsDiagnostics:
+
+        raise RuntimeError(
+            "traceback RuntimeError external_event_id provider_issuance_ref "
+            "issue_idempotency_key DATABASE_URL postgres:// postgresql:// "
+            "Bearer PRIVATE KEY raw_provider_payload"
+        )
+
+
 
 
 
@@ -219,6 +246,32 @@ class _RedactionRaise:
     async def redact_diagnostics_summary(self, summary: Adm02DiagnosticsSummary) -> Adm02DiagnosticsSummary:
 
         raise RuntimeError("redaction failed")
+
+
+class _ReadsWithSensitiveInternals(_Reads):
+
+    def __init__(self) -> None:
+
+        super().__init__()
+
+        self._internal_sensitive_blob = (
+            "external_event_id provider_issuance_ref issue_idempotency_key DATABASE_URL "
+            "postgres:// postgresql:// Bearer PRIVATE KEY raw_provider_payload"
+        )
+
+    async def get_billing_facts_diagnostics(self, internal_user_id: str) -> Adm02BillingFactsDiagnostics:
+
+        self.calls.append("bill")
+
+        _ = self._internal_sensitive_blob
+
+        return Adm02BillingFactsDiagnostics(
+
+            category=Adm02BillingFactsCategory.HAS_ACCEPTED,
+
+            internal_fact_refs=("opaque-fact-1", "opaque-fact-2"),
+
+        )
 
 
 
@@ -579,6 +632,99 @@ def test_adm02_success_without_redaction_audit_unredacted() -> None:
         assert audit.records[0].correlation_id == cid
 
 
+
+    _run(main())
+
+
+def test_adm02_success_leak_guard_sensitive_read_internals_not_exposed_and_audit_bounded() -> None:
+
+    async def main() -> None:
+
+        reads = _ReadsWithSensitiveInternals()
+
+        audit = _AuditOk()
+
+        h, _, _ = _handler(reads=reads, audit=audit)
+
+        cid = new_correlation_id()
+
+        result = await h.handle(_inp(InternalUserTarget(internal_user_id="u-1"), cid=cid))
+
+        encoded_result = json.dumps(asdict(result), sort_keys=True).lower()
+
+        assert result.outcome is Adm02DiagnosticsOutcome.SUCCESS
+
+        assert result.summary is not None
+
+        assert result.summary.billing.internal_fact_refs == ("opaque-fact-1", "opaque-fact-2")
+
+        assert result.summary.redaction in {
+            RedactionMarker.NONE,
+            RedactionMarker.PARTIAL,
+            RedactionMarker.FULL,
+        }
+
+        assert "internal_fact_refs" in encoded_result
+
+        for forbidden in _FORBIDDEN_FRAGMENTS:
+            assert forbidden not in encoded_result
+
+        assert len(audit.records) == 1
+
+        audit_record = audit.records[0]
+
+        assert audit_record.disclosure in {
+            Adm02FactOfAccessDisclosureCategory.UNREDACTED,
+            Adm02FactOfAccessDisclosureCategory.PARTIAL,
+            Adm02FactOfAccessDisclosureCategory.FULLY_REDACTED,
+        }
+
+        encoded_audit = json.dumps(asdict(audit_record), sort_keys=True).lower()
+
+        for forbidden in _FORBIDDEN_FRAGMENTS:
+            assert forbidden not in encoded_audit
+
+    _run(main())
+
+
+def test_adm02_read_port_sensitive_exception_fail_closed_no_leak() -> None:
+
+    async def main() -> None:
+
+        reads = _ReadsSpy()
+
+        audit = _AuditOk()
+
+        h = Adm02DiagnosticsHandler(
+
+            authorization=_AuthAllow(True),
+
+            identity=_Identity("u-1"),
+
+            billing=_BillingRaiseSensitive(),
+
+            quarantine=reads,
+
+            reconciliation=reads,
+
+            audit=audit,
+
+        )
+
+        result = await h.handle(_inp(InternalUserTarget(internal_user_id="u-1")))
+
+        encoded_result = json.dumps(asdict(result), sort_keys=True).lower()
+
+        assert result.outcome is Adm02DiagnosticsOutcome.DEPENDENCY_FAILURE
+
+        assert result.summary is None
+
+        assert reads.any_calls == 0
+
+        assert audit.records == []
+
+        for forbidden in _FORBIDDEN_FRAGMENTS:
+            assert forbidden not in encoded_result
 
     _run(main())
 
