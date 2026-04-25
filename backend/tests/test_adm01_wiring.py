@@ -13,12 +13,16 @@ import httpx
 
 from app.admin_support.adm01_internal_http import ADM01_INTERNAL_LOOKUP_PATH
 from app.admin_support.adm01_wiring import (
+    build_adm01_entitlement_read_from_postgres_snapshots,
     build_adm01_internal_lookup_http_app,
     build_adm01_issuance_read_from_postgres_issuance_state,
     build_adm01_subscription_read_from_postgres_snapshots,
 )
 from app.admin_support.adm01_postgres_issuance_read_adapter import Adm01PostgresIssuanceReadAdapter
 from app.admin_support.adm01_postgres_subscription_read_adapter import Adm01PostgresSubscriptionReadAdapter
+from app.admin_support.adm01_subscription_entitlement_read_adapter import (
+    Adm01SubscriptionEntitlementReadAdapter,
+)
 from app.admin_support.contracts import (
     AdminPolicyFlag,
     EntitlementSummary,
@@ -138,6 +142,12 @@ def test_postgres_subscription_helper_wraps_reader() -> None:
     spec = MagicMock(spec=PostgresSubscriptionSnapshotReader)
     p = build_adm01_subscription_read_from_postgres_snapshots(spec)
     assert isinstance(p, Adm01PostgresSubscriptionReadAdapter)
+
+
+def test_postgres_entitlement_helper_wraps_reader() -> None:
+    spec = MagicMock(spec=PostgresSubscriptionSnapshotReader)
+    p = build_adm01_entitlement_read_from_postgres_snapshots(spec)
+    assert isinstance(p, Adm01SubscriptionEntitlementReadAdapter)
 
 
 def test_wiring_issued_ok_via_asgi() -> None:

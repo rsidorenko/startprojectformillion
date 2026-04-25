@@ -12,6 +12,9 @@ from app.admin_support.adm01_postgres_issuance_read_adapter import Adm01Postgres
 from app.admin_support.adm01_postgres_subscription_read_adapter import (
     Adm01PostgresSubscriptionReadAdapter,
 )
+from app.admin_support.adm01_subscription_entitlement_read_adapter import (
+    Adm01SubscriptionEntitlementReadAdapter,
+)
 from app.admin_support.authorization import AllowlistAdm01Authorization
 from app.admin_support.contracts import (
     Adm01EntitlementReadPort,
@@ -38,6 +41,13 @@ def build_adm01_subscription_read_from_postgres_snapshots(
 ) -> Adm01SubscriptionReadPort:
     """:class:`Adm01PostgresSubscriptionReadAdapter` is the supported ADM-01 subscription read for Postgres."""
     return Adm01PostgresSubscriptionReadAdapter(snapshots)
+
+
+def build_adm01_entitlement_read_from_postgres_snapshots(
+    snapshots: PostgresSubscriptionSnapshotReader,
+) -> Adm01EntitlementReadPort:
+    """:class:`Adm01SubscriptionEntitlementReadAdapter` derives ADM-01 entitlement from snapshots."""
+    return Adm01SubscriptionEntitlementReadAdapter(snapshots)
 
 
 def build_adm01_lookup_handler(

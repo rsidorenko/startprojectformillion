@@ -13,11 +13,10 @@ import uvicorn
 
 from app.admin_support.contracts import (
     AdminPolicyFlag,
-    EntitlementSummary,
-    EntitlementSummaryCategory,
     InternalUserTarget,
 )
 from app.admin_support.adm01_wiring import (
+    build_adm01_entitlement_read_from_postgres_snapshots,
     build_adm01_subscription_read_from_postgres_snapshots,
 )
 from app.internal_admin.adm01_bundle import (
@@ -45,11 +44,6 @@ class _IdentityEchoInternalUserId:
         if isinstance(target, InternalUserTarget):
             return target.internal_user_id
         return None
-
-
-class _EntitlementReadMinimal:
-    async def get_entitlement_summary(self, internal_user_id: str) -> EntitlementSummary:
-        return EntitlementSummary(category=EntitlementSummaryCategory.UNKNOWN)
 
 
 class _PolicyReadMinimal:
@@ -156,7 +150,7 @@ async def async_run_adm01_internal_http_from_env(
         deps = Adm01InternalLookupWithPostgresIssuanceStateDependencies(
             identity=_IdentityEchoInternalUserId(),
             subscription=build_adm01_subscription_read_from_postgres_snapshots(snapshots),
-            entitlement=_EntitlementReadMinimal(),
+            entitlement=build_adm01_entitlement_read_from_postgres_snapshots(snapshots),
             postgres_issuance_state=repo,
             policy=_PolicyReadMinimal(),
             redaction=None,

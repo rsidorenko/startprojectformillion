@@ -25,6 +25,7 @@ from app.admin_support.adm02_quarantine_mismatch_adapter import Adm02QuarantineM
 from app.admin_support.adm02_reconciliation_runs_adapter import Adm02ReconciliationRunsReadAdapter
 from app.admin_support.adm02_diagnostics import ADM02_CAPABILITY_CLASS, Adm02DiagnosticsHandler
 from app.admin_support.adm01_wiring import (
+    build_adm01_entitlement_read_from_postgres_snapshots,
     build_adm01_internal_lookup_http_app,
     build_adm01_issuance_read_from_postgres_issuance_state,
     build_adm01_lookup_handler,
@@ -114,6 +115,7 @@ __all__ = [
     "Adm02FactOfAccessPersistenceAuditAdapter",
     "Adm02DiagnosticsInput",
     "build_adm01_internal_lookup_http_app",
+    "build_adm01_entitlement_read_from_postgres_snapshots",
     "build_adm01_issuance_read_from_postgres_issuance_state",
     "build_adm01_lookup_handler",
     "build_adm02_internal_diagnostics_http_app",
