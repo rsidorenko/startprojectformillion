@@ -1,0 +1,257 @@
+"""
+In-process config issuance orchestration: entitlement, idempotency, provider calls.
+
+Durable only inside the process: no cross-restart guarantee (see tests/docstrings).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import TYPE_CHECKING
+
+from app.issuance.contracts import (
+    CreateAccessOutcome,
+    GetSafeInstructionOutcome,
+    IssuanceAuditRecord,
+    IssuanceOperationType,
+    IssuanceOutcomeCategory,
+    IssuanceRequest,
+    IssuanceServiceResult,
+    RevokeAccessOutcome,
+)
+from app.issuance.entitlement import issue_resend_denial_category, subscription_allows_issue_resend
+from app.shared.correlation import is_valid_correlation_id
+
+if TYPE_CHECKING:
+    from app.issuance.contracts import IssuanceProviderPort
+
+
+class _LedgerState(StrEnum):
+    ISSUED = "issued"
+    REVOKED = "revoked"
+
+
+@dataclass
+class _LedgerEntry:
+    issuance_ref: str
+    state: _LedgerState
+
+
+def _issuance_ledger_key(internal_user_id: str, issue_idempotency_key: str) -> tuple[str, str]:
+    return (internal_user_id, issue_idempotency_key)
+
+
+class IssuanceService:
+    """
+    In-memory idempotency and optional in-memory audit records (no persistence).
+
+    Revoke is allowed when a ledger entry exists for the linked issue key, even if the
+    subscription is no longer ACTIVE (cleanup / expire path); issue and resend still require ACTIVE.
+    """
+
+    def __init__(self, provider: IssuanceProviderPort) -> None:
+        self._provider = provider
+        self._ledger: dict[tuple[str, str], _LedgerEntry] = {}
+        self._issue_idempotent_result: dict[tuple[str, str], IssuanceServiceResult] = {}
+        self._revoke_completed: set[tuple[str, str]] = set()
+        self._resend_cached: dict[tuple[str, str], str] = {}
+        self._audit: list[IssuanceAuditRecord] = []
+
+    @property
+    def audit_records(self) -> tuple[IssuanceAuditRecord, ...]:
+        return tuple(self._audit)
+
+    def clear_in_memory_state(self) -> None:
+        """Test helper: reset process-local ledger and caches (not a production API)."""
+        self._ledger.clear()
+        self._issue_idempotent_result.clear()
+        self._revoke_completed.clear()
+        self._resend_cached.clear()
+        self._audit.clear()
+
+    def _append_audit(self, request: IssuanceRequest, category: IssuanceOutcomeCategory) -> None:
+        self._audit.append(
+            IssuanceAuditRecord(
+                operation=request.operation,
+                outcome=category,
+                internal_user_id=request.internal_user_id,
+                correlation_id=request.correlation_id,
+                idempotency_key=request.idempotency_key,
+                link_issue_idempotency_key=request.link_issue_idempotency_key,
+            )
+        )
+
+    def _validate_basics(self, request: IssuanceRequest) -> IssuanceOutcomeCategory | None:
+        if not request.idempotency_key:
+            return IssuanceOutcomeCategory.INTERNAL_ERROR
+        if not is_valid_correlation_id(request.correlation_id):
+            return IssuanceOutcomeCategory.INTERNAL_ERROR
+        op = request.operation
+        if op is IssuanceOperationType.ISSUE and request.link_issue_idempotency_key is not None:
+            return IssuanceOutcomeCategory.INTERNAL_ERROR
+        if op is not IssuanceOperationType.ISSUE and not request.link_issue_idempotency_key:
+            return IssuanceOutcomeCategory.INTERNAL_ERROR
+        return None
+
+    def _get_ledger(
+        self, internal_user_id: str, issue_idempotency_key: str
+    ) -> _LedgerEntry | None:
+        return self._ledger.get(_issuance_ledger_key(internal_user_id, issue_idempotency_key))
+
+    def _ok(self, request: IssuanceRequest, result: IssuanceServiceResult) -> IssuanceServiceResult:
+        self._append_audit(request, result.category)
+        return result
+
+    async def execute(self, request: IssuanceRequest) -> IssuanceServiceResult:
+        bad = self._validate_basics(request)
+        if bad is not None:
+            return self._ok(request, IssuanceServiceResult(category=bad, safe_ref=None))
+
+        if request.operation is IssuanceOperationType.ISSUE:
+            return await self._execute_issue(request)
+        if request.operation is IssuanceOperationType.RESEND:
+            return await self._execute_resend(request)
+        return await self._execute_revoke(request)
+
+    async def _execute_issue(self, request: IssuanceRequest) -> IssuanceServiceResult:
+        u = request.internal_user_id
+        key = request.idempotency_key
+        lk = _issuance_ledger_key(u, key)
+
+        if not subscription_allows_issue_resend(request.subscription_state):
+            cat = issue_resend_denial_category(request.subscription_state)
+            return self._ok(request, IssuanceServiceResult(category=cat, safe_ref=None))
+
+        entry = self._ledger.get(lk)
+        if entry is not None and entry.state is _LedgerState.REVOKED:
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.INTERNAL_ERROR, safe_ref=None)
+            )
+
+        if lk in self._issue_idempotent_result:
+            cached = self._issue_idempotent_result[lk]
+            return self._ok(
+                request,
+                IssuanceServiceResult(
+                    category=IssuanceOutcomeCategory.ALREADY_ISSUED, safe_ref=cached.safe_ref
+                ),
+            )
+
+        pr = await self._provider.create_or_ensure_access(
+            internal_user_id=u, idempotency_key=key, correlation_id=request.correlation_id
+        )
+        if pr.outcome is CreateAccessOutcome.SUCCESS:
+            if not pr.issuance_ref:
+                return self._ok(
+                    request, IssuanceServiceResult(category=IssuanceOutcomeCategory.INTERNAL_ERROR)
+                )
+            self._ledger[lk] = _LedgerEntry(issuance_ref=pr.issuance_ref, state=_LedgerState.ISSUED)
+            res = IssuanceServiceResult(
+                category=IssuanceOutcomeCategory.ISSUED, safe_ref=pr.issuance_ref
+            )
+            self._issue_idempotent_result[lk] = res
+            return self._ok(request, res)
+        if pr.outcome is CreateAccessOutcome.UNAVAILABLE:
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.PROVIDER_UNAVAILABLE)
+            )
+        if pr.outcome is CreateAccessOutcome.REJECTED:
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.PROVIDER_REJECTED)
+            )
+        return self._ok(request, IssuanceServiceResult(category=IssuanceOutcomeCategory.INTERNAL_ERROR))
+
+    async def _execute_resend(self, request: IssuanceRequest) -> IssuanceServiceResult:
+        u = request.internal_user_id
+        assert request.link_issue_idempotency_key is not None
+        link = request.link_issue_idempotency_key
+
+        if not subscription_allows_issue_resend(request.subscription_state):
+            cat = issue_resend_denial_category(request.subscription_state)
+            return self._ok(request, IssuanceServiceResult(category=cat, safe_ref=None))
+
+        le = self._get_ledger(u, link)
+        if le is None:
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.UNSAFE_TO_DELIVER)
+            )
+        if le.state is _LedgerState.REVOKED:
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.REVOKED, safe_ref=None)
+            )
+
+        rsk = (u, request.idempotency_key)
+        if rsk in self._resend_cached:
+            return self._ok(
+                request,
+                IssuanceServiceResult(
+                    category=IssuanceOutcomeCategory.DELIVERY_READY, safe_ref=self._resend_cached[rsk]
+                ),
+            )
+
+        g = await self._provider.get_safe_delivery_instructions(
+            internal_user_id=u, issuance_ref=le.issuance_ref, correlation_id=request.correlation_id
+        )
+        if g.outcome is GetSafeInstructionOutcome.READY and g.instruction_ref:
+            self._resend_cached[rsk] = g.instruction_ref
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.DELIVERY_READY, safe_ref=g.instruction_ref)
+            )
+        if g.outcome is GetSafeInstructionOutcome.UNAVAILABLE:
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.PROVIDER_UNAVAILABLE)
+            )
+        if g.outcome is GetSafeInstructionOutcome.REJECTED:
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.PROVIDER_REJECTED)
+            )
+        return self._ok(
+            request, IssuanceServiceResult(category=IssuanceOutcomeCategory.UNSAFE_TO_DELIVER)
+        )
+
+    async def _execute_revoke(self, request: IssuanceRequest) -> IssuanceServiceResult:
+        u = request.internal_user_id
+        assert request.link_issue_idempotency_key is not None
+        link = request.link_issue_idempotency_key
+        lk = _issuance_ledger_key(u, link)
+        rdone = (u, request.idempotency_key)
+        if rdone in self._revoke_completed:
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.REVOKED, safe_ref=None)
+            )
+
+        le = self._get_ledger(u, link)
+        if le is None:
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.NOT_ENTITLED, safe_ref=None)
+            )
+        if le.state is _LedgerState.REVOKED:
+            self._revoke_completed.add(rdone)
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.REVOKED, safe_ref=None)
+            )
+
+        rr = await self._provider.revoke_access(
+            internal_user_id=u,
+            issuance_ref=le.issuance_ref,
+            idempotency_key=request.idempotency_key,
+            correlation_id=request.correlation_id,
+        )
+        if rr.outcome is RevokeAccessOutcome.REVOKED or rr.outcome is RevokeAccessOutcome.ALREADY_REVOKED:
+            self._ledger[lk] = _LedgerEntry(issuance_ref=le.issuance_ref, state=_LedgerState.REVOKED)
+            if lk in self._issue_idempotent_result:
+                del self._issue_idempotent_result[lk]
+            self._revoke_completed.add(rdone)
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.REVOKED, safe_ref=None)
+            )
+        if rr.outcome is RevokeAccessOutcome.UNAVAILABLE:
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.PROVIDER_UNAVAILABLE)
+            )
+        if rr.outcome is RevokeAccessOutcome.REJECTED:
+            return self._ok(
+                request, IssuanceServiceResult(category=IssuanceOutcomeCategory.PROVIDER_REJECTED)
+            )
+        return self._ok(request, IssuanceServiceResult(category=IssuanceOutcomeCategory.INTERNAL_ERROR))
