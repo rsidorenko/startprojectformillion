@@ -19,6 +19,16 @@ from app.persistence.slice1_retention_manual_cleanup import (
 from app.security.config import ConfigurationError, RuntimeConfig
 
 _SYNTHETIC_DSN = "postgresql://user:secret@127.0.0.1:5432/scheduled_test"
+_SYNTHETIC_DSN_SECRET = "secret"
+_SECRET_NEEDLES = (
+    "postgres://",
+    "postgresql://",
+    "Bearer ",
+    "PRIVATE KEY",
+    "TOP_SECRET",
+    "SECRET",
+    "TOKEN",
+)
 
 ENV_SCHED = scheduled_mod.SLICE1_RETENTION_SCHEDULED_ENABLE_DELETE
 
@@ -27,6 +37,14 @@ def _valid_retention_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(ENV_TTL, "3600")
     monkeypatch.setenv(ENV_BATCH, "100")
     monkeypatch.setenv(ENV_MAX_ROUNDS, "5")
+
+
+def _classify_retention_boundary_exception_for_tests(exc: BaseException) -> str:
+    if isinstance(exc, ConfigurationError):
+        return "config_error"
+    if isinstance(exc, (ConnectionError, OSError)):
+        return "dependency_error"
+    return "unexpected_error"
 
 
 def test_scheduled_no_opt_in_forces_dry_run_true(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -447,10 +465,14 @@ def test_scheduled_opt_in_cleanup_failure_closes_pool_and_sanitizes_output(
     assert pool.closed is True
 
     captured = capsys.readouterr()
+    assert _classify_retention_boundary_exception_for_tests(excinfo.value) == "unexpected_error"
     assert "slice1_retention_scheduled_cleanup" not in captured.out
     assert _SYNTHETIC_DSN not in str(excinfo.value)
     assert _SYNTHETIC_DSN not in captured.out
     assert _SYNTHETIC_DSN not in captured.err
+    lowered = str(excinfo.value).lower()
+    for needle in _SECRET_NEEDLES:
+        assert needle.lower() not in lowered
 
 
 @pytest.mark.asyncio
@@ -474,9 +496,50 @@ async def test_missing_dsn_before_pool(
     )
     monkeypatch.setattr(scheduled_mod, "load_runtime_config", lambda: config)
     monkeypatch.setattr(scheduled_mod, "_default_open_pool", no_pool)
-    with pytest.raises(ConfigurationError, match="DATABASE_URL"):
+    with pytest.raises(ConfigurationError, match="DATABASE_URL") as exc_info:
         await scheduled_mod.run_slice1_retention_scheduled_from_env()
+    assert _classify_retention_boundary_exception_for_tests(exc_info.value) == "config_error"
     assert not open_calls
+
+
+@pytest.mark.asyncio
+async def test_scheduled_dependency_failure_taxonomy_and_no_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _valid_retention_env(monkeypatch)
+    monkeypatch.setenv(ENV_SCHED, "1")
+
+    config = RuntimeConfig(
+        bot_token="12345678901",
+        database_url=_SYNTHETIC_DSN,
+        app_env="development",
+        debug_safe=False,
+    )
+    loaded = RetentionSettings(
+        ttl_seconds=3600,
+        batch_limit=100,
+        dry_run=False,
+        max_rounds=5,
+    )
+
+    async def fail_open_pool(_url: str) -> object:
+        raise OSError("driver dependency unavailable")
+
+    monkeypatch.setattr(scheduled_mod, "load_runtime_config", lambda: config)
+    monkeypatch.setattr(scheduled_mod, "load_retention_settings_from_env", lambda: loaded)
+    monkeypatch.setattr(scheduled_mod, "_default_open_pool", fail_open_pool)
+
+    with pytest.raises(OSError) as exc_info:
+        await scheduled_mod.run_slice1_retention_scheduled_from_env()
+
+    assert _classify_retention_boundary_exception_for_tests(exc_info.value) == "dependency_error"
+    assert _SYNTHETIC_DSN not in str(exc_info.value)
+    assert _SYNTHETIC_DSN_SECRET not in str(exc_info.value)
+    captured = capsys.readouterr()
+    assert "slice1_retention_scheduled_cleanup" not in captured.out
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 def test_main_delegates_to_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:

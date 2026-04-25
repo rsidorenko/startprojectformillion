@@ -13,6 +13,15 @@ import pytest
 
 _BACKEND_DIR = Path(__file__).resolve().parents[1]
 _SCRIPT_PATH = _BACKEND_DIR / "scripts" / "run_slice1_retention_dry_run.py"
+_SECRET_NEEDLES = (
+    "postgres://",
+    "postgresql://",
+    "Bearer ",
+    "PRIVATE KEY",
+    "TOP_SECRET",
+    "SECRET",
+    "TOKEN",
+)
 
 
 def _load_script_module() -> ModuleType:
@@ -22,6 +31,15 @@ def _load_script_module() -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _classify_retention_boundary_exception_for_tests(exc: BaseException) -> str:
+    msg = str(exc).lower()
+    if isinstance(exc, RuntimeError) and "database_url is required" in msg:
+        return "config_error"
+    if isinstance(exc, subprocess.CalledProcessError):
+        return "dependency_error"
+    return "unexpected_error"
 
 
 def test_fail_fast_without_database_url(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -36,21 +54,32 @@ def test_fail_fast_without_database_url(monkeypatch: pytest.MonkeyPatch, capsys:
 
     monkeypatch.setattr(script.subprocess, "run", fake_run)
 
-    with pytest.raises(RuntimeError, match="DATABASE_URL is required"):
+    with pytest.raises(RuntimeError, match="DATABASE_URL is required") as exc_info:
         script.main()
 
     out = capsys.readouterr()
     assert calls == []
+    assert _classify_retention_boundary_exception_for_tests(exc_info.value) == "config_error"
     assert "DATABASE_URL" not in out.out
     assert "DATABASE_URL" not in out.err
+    assert out.out == ""
+    assert out.err == ""
 
 
-def test_fail_fast_with_whitespace_only_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fail_fast_with_whitespace_only_database_url(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     script = _load_script_module()
     monkeypatch.setenv("DATABASE_URL", "   ")
 
-    with pytest.raises(RuntimeError, match="DATABASE_URL is required"):
+    with pytest.raises(RuntimeError, match="DATABASE_URL is required") as exc_info:
         script.main()
+
+    captured = capsys.readouterr()
+    assert _classify_retention_boundary_exception_for_tests(exc_info.value) == "config_error"
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 def test_runs_single_subprocess_with_expected_argv_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,4 +180,9 @@ def test_raw_database_url_not_exposed_in_helper_error(monkeypatch: pytest.Monkey
     with pytest.raises(subprocess.CalledProcessError) as exc_info:
         script.main()
 
-    assert raw_db_url not in str(exc_info.value)
+    err = str(exc_info.value)
+    assert _classify_retention_boundary_exception_for_tests(exc_info.value) == "dependency_error"
+    assert raw_db_url not in err
+    lowered = err.lower()
+    for needle in _SECRET_NEEDLES:
+        assert needle.lower() not in lowered

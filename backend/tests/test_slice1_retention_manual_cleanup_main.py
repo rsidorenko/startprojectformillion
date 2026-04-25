@@ -23,6 +23,15 @@ _SYNTHETIC_DSN_SECRET = "TOP_SECRET_XYZabc123"
 _SYNTHETIC_DSN = (
     f"postgresql://user:{_SYNTHETIC_DSN_SECRET}@127.0.0.1:5432/slice1_retention_testdb"
 )
+_SECRET_NEEDLES = (
+    "postgres://",
+    "postgresql://",
+    "Bearer ",
+    "PRIVATE KEY",
+    "TOP_SECRET",
+    "SECRET",
+    "TOKEN",
+)
 
 
 def _valid_retention_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -30,6 +39,14 @@ def _valid_retention_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(ENV_BATCH, "100")
     monkeypatch.setenv(ENV_MAX_ROUNDS, "5")
     monkeypatch.delenv(ENV_DRY_RUN, raising=False)
+
+
+def _classify_retention_boundary_exception_for_tests(exc: BaseException) -> str:
+    if isinstance(exc, ConfigurationError):
+        return "config_error"
+    if isinstance(exc, (ConnectionError, OSError)):
+        return "dependency_error"
+    return "unexpected_error"
 
 
 def test_load_retention_settings_from_env_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -235,13 +252,18 @@ async def test_run_slice1_retention_cleanup_from_env_cleanup_failure_closes_pool
     cleanup.assert_awaited_once()
 
     err_text = str(excinfo.value)
+    assert _classify_retention_boundary_exception_for_tests(excinfo.value) == "unexpected_error"
     assert _SYNTHETIC_DSN_SECRET not in err_text
     assert "postgresql://" not in err_text
+    lowered = err_text.lower()
+    for needle in _SECRET_NEEDLES:
+        assert needle.lower() not in lowered
 
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "postgresql://" not in captured.err
     assert _SYNTHETIC_DSN_SECRET not in captured.err
+    assert "slice1_retention_cleanup" not in captured.out
 
 
 @pytest.mark.asyncio
@@ -332,6 +354,57 @@ async def test_run_slice1_retention_cleanup_from_env_config_failure_no_dsn_leak(
     assert _SYNTHETIC_DSN_SECRET not in captured.err
     assert "postgresql://" not in captured.out
     assert "postgresql://" not in captured.err
+    assert "slice1_retention_cleanup" not in captured.out
+
+
+@pytest.mark.asyncio
+async def test_run_slice1_retention_cleanup_from_env_config_failure_taxonomy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BOT_TOKEN", "12345678901")
+    monkeypatch.setenv("DATABASE_URL", _SYNTHETIC_DSN)
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv(ENV_TTL, raising=False)
+
+    with pytest.raises(ConfigurationError) as exc_info:
+        await main_mod.run_slice1_retention_cleanup_from_env()
+
+    assert _classify_retention_boundary_exception_for_tests(exc_info.value) == "config_error"
+
+
+@pytest.mark.asyncio
+async def test_run_slice1_retention_cleanup_from_env_dependency_failure_taxonomy(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = RuntimeConfig(
+        bot_token="12345678901",
+        database_url=_SYNTHETIC_DSN,
+        app_env="development",
+        debug_safe=False,
+    )
+    settings = RetentionSettings(
+        ttl_seconds=3600,
+        batch_limit=10,
+        dry_run=False,
+        max_rounds=2,
+    )
+
+    async def fail_open_pool(_url: str) -> _FakePool:
+        raise ConnectionError("pool open failed")
+
+    monkeypatch.setattr(main_mod, "load_runtime_config", lambda: config)
+    monkeypatch.setattr(main_mod, "load_retention_settings_from_env", lambda: settings)
+    monkeypatch.setattr(main_mod, "_default_open_pool", fail_open_pool)
+
+    with pytest.raises(ConnectionError) as exc_info:
+        await main_mod.run_slice1_retention_cleanup_from_env()
+
+    assert _classify_retention_boundary_exception_for_tests(exc_info.value) == "dependency_error"
+    assert _SYNTHETIC_DSN not in str(exc_info.value)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 def test_main_delegates_to_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:
