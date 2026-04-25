@@ -110,6 +110,37 @@ On failure, stderr: `billing_subscription_apply: failed category=...` (e.g. `not
 - **No** public HTTP surface for this flow; run only from trusted operator environments.
 - **No** automatic invocation of apply from ingest in the codebase; this runbook is the **manual** sequence.
 
+## Automated operator e2e smoke
+
+Use the bounded smoke helper to validate ingest -> apply -> readiness with synthetic data only:
+
+```bash
+python scripts/check_operator_billing_ingest_apply_e2e.py
+```
+
+Required environment:
+
+- `DATABASE_URL` pointing to a disposable/local Postgres database.
+- `BOT_TOKEN` may be set to a fake/safe token if your local runtime config policy requires it.
+- Operator opt-in flags for the entrypoints:
+  - `BILLING_NORMALIZED_INGEST_ENABLE=1`
+  - `BILLING_SUBSCRIPTION_APPLY_ENABLE=1`
+
+Expected fixed stdout on success:
+
+```text
+operator_billing_ingest_apply_e2e: ok
+```
+
+Safety guarantees:
+
+- Uses synthetic IDs only with `operator-e2e-` prefix.
+- Cleans up only exact synthetic rows created by this script instance.
+- Does not open a public webhook surface.
+- Does not invoke Telegram runtime/polling behavior.
+- Does not use or require a real issuance provider.
+- Do not print or copy production DSN/tokens into logs or docs.
+
 ## See also
 
 - `billing_normalized_ingest_runbook.md` — ingest-only details.

@@ -15,6 +15,7 @@ on:
       - "backend/scripts/check_admin_support_internal_read_gate.py"
       - "backend/scripts/check_adm01_postgres_issuance_composition.py"
       - "backend/scripts/check_adm01_internal_http_entrypoint_smoke.py"
+      - "backend/scripts/check_operator_billing_ingest_apply_e2e.py"
       - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
       - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
@@ -38,6 +39,7 @@ on:
       - "backend/scripts/check_admin_support_internal_read_gate.py"
       - "backend/scripts/check_adm01_postgres_issuance_composition.py"
       - "backend/scripts/check_adm01_internal_http_entrypoint_smoke.py"
+      - "backend/scripts/check_operator_billing_ingest_apply_e2e.py"
       - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
       - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
@@ -273,10 +275,39 @@ jobs:
             tests/test_postgres_migration_ledger_integration.py \
             tests/test_postgres_uc05_apply_billing_fact.py \
             tests/test_postgres_billing_subscription_apply_main.py \
+            tests/test_run_operator_billing_ingest_apply_e2e.py \
             tests/test_postgres_issuance_state.py \
             tests/test_postgres_issuance_service_integration.py \
             tests/test_postgres_adm01_issuance_read_adapter.py \
             --junitxml="$REPORT_DIR/backend-postgres-retention-integration.xml"
+
+      - name: Run operator billing ingest/apply e2e smoke (advisory evidence)
+        id: operator_billing_ingest_apply_e2e
+        continue-on-error: true
+        env:
+          DATABASE_URL: postgresql://slice1ret_ci:slice1retCILocal0nly@127.0.0.1:5432/slice1retention_ci
+          BILLING_NORMALIZED_INGEST_ENABLE: "1"
+          BILLING_SUBSCRIPTION_APPLY_ENABLE: "1"
+        run: python scripts/check_operator_billing_ingest_apply_e2e.py
+
+      - name: Write operator billing ingest/apply e2e advisory summary marker
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          report_dir = Path(os.environ["REPORT_DIR"])
+          summary_path = report_dir / "backend-operator-billing-ingest-apply-e2e-summary.txt"
+          outcome = "${{ steps.operator_billing_ingest_apply_e2e.outcome }}"
+          normalized = "success" if outcome == "success" else "failure"
+
+          summary_lines = [
+              "operator billing ingest/apply e2e advisory outcome marker",
+              f"operator_billing_ingest_apply_e2e_outcome={normalized}",
+          ]
+          summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+          PY
 
       - name: Verify retention integration JUnit report
         if: always()

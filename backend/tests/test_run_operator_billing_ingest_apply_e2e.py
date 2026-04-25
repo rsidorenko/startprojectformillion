@@ -1,0 +1,172 @@
+"""Tests for operator ingest/apply e2e smoke script output, safety, and cleanup hooks."""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+_SCRIPT_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "scripts"
+    / "check_operator_billing_ingest_apply_e2e.py"
+)
+_FORBIDDEN = (
+    "DATABASE_URL",
+    "postgres://",
+    "postgresql://",
+    "Bearer ",
+    "PRIVATE KEY",
+    "provider_issuance_ref",
+    "issue_idempotency_key",
+    "schema_version",
+)
+
+
+def _load_script_module():
+    spec = importlib.util.spec_from_file_location(
+        "check_operator_billing_ingest_apply_e2e",
+        _SCRIPT_PATH,
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_missing_database_url_returns_fail_without_leak(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = _load_script_module()
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    rc = script.main([])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert out.out == ""
+    assert out.err.strip() == "operator_billing_ingest_apply_e2e: fail"
+    for frag in _FORBIDDEN:
+        assert frag not in out.out
+        assert frag not in out.err
+
+
+def test_success_path_fixed_ok_line(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = _load_script_module()
+
+    async def ok_run() -> None:
+        return None
+
+    monkeypatch.setattr(script, "run_operator_billing_ingest_apply_e2e", ok_run)
+    rc = script.main([])
+    out = capsys.readouterr()
+    assert rc == 0
+    assert out.out.strip() == "operator_billing_ingest_apply_e2e: ok"
+    assert out.err == ""
+
+
+def test_runtime_error_returns_fail_no_forbidden_output(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = _load_script_module()
+
+    async def fail_run() -> None:
+        raise RuntimeError("postgresql://u:secret@localhost/db")
+
+    monkeypatch.setattr(script, "run_operator_billing_ingest_apply_e2e", fail_run)
+    rc = script.main([])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert out.out == ""
+    assert out.err.strip() == "operator_billing_ingest_apply_e2e: fail"
+    assert "Traceback" not in out.err
+    for frag in _FORBIDDEN:
+        assert frag not in out.err
+
+
+def test_unexpected_exception_returns_failed_without_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = _load_script_module()
+
+    async def boom_run() -> None:
+        raise ValueError("DATABASE_URL=postgresql://bad")
+
+    monkeypatch.setattr(script, "run_operator_billing_ingest_apply_e2e", boom_run)
+    rc = script.main([])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert out.out == ""
+    assert out.err.strip() == "operator_billing_ingest_apply_e2e: failed"
+    assert "Traceback" not in out.err
+    for frag in _FORBIDDEN:
+        assert frag not in out.err
+
+
+@pytest.mark.asyncio
+async def test_cleanup_called_on_partial_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    script = _load_script_module()
+    calls: list[str] = []
+    ids = script._new_synthetic_ids()
+
+    class _ConnCtx:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Pool:
+        def acquire(self):
+            return _ConnCtx()
+
+        async def close(self) -> None:
+            calls.append("pool.close")
+
+    async def fake_cleanup(_conn, ids_obj) -> None:
+        assert ids_obj.uid.startswith("operator-e2e-")
+        assert ids_obj.fact_ref.startswith("operator-e2e-")
+        assert ids_obj.ext_event_id.startswith("operator-e2e-")
+        calls.append("cleanup")
+
+    async def fake_create_pool(*args, **kwargs):
+        _ = (args, kwargs)
+        return _Pool()
+
+    async def fake_apply_migrations(*args, **kwargs) -> None:
+        _ = (args, kwargs)
+        return None
+
+    async def fail_ingest(*args, **kwargs):
+        _ = (args, kwargs)
+        raise RuntimeError("forced ingest failure")
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://local/dev")
+    monkeypatch.setattr(script.asyncpg, "create_pool", fake_create_pool)
+    monkeypatch.setattr(script, "apply_postgres_migrations", fake_apply_migrations)
+    monkeypatch.setattr(script, "_cleanup_synthetic_rows", fake_cleanup)
+    monkeypatch.setattr(script, "_new_synthetic_ids", lambda: ids)
+    monkeypatch.setattr(script, "async_run_billing_ingest_from_parsed", fail_ingest)
+
+    with pytest.raises(RuntimeError):
+        await script.run_operator_billing_ingest_apply_e2e()
+    assert calls.count("cleanup") == 2
+    assert calls[-1] == "pool.close"
+
+
+def test_synthetic_ids_use_required_prefix() -> None:
+    script = _load_script_module()
+    ids = script._new_synthetic_ids()
+    assert ids.uid.startswith("operator-e2e-")
+    assert ids.fact_ref.startswith("operator-e2e-")
+    assert ids.ext_event_id.startswith("operator-e2e-")
+    assert ids.correlation_id.startswith("operator-e2e-")
+
+
+def test_leak_guard_rejects_forbidden_fragments() -> None:
+    script = _load_script_module()
+    for frag in _FORBIDDEN:
+        with pytest.raises(RuntimeError, match="leak guard"):
+            script._assert_no_forbidden_output(f"x {frag} y")
