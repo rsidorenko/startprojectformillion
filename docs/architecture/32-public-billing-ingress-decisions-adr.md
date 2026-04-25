@@ -113,7 +113,7 @@ This ADR **records or constrains** product and security **decisions** left open 
 
 ## J. Consequences
 
-- **Allowed next implementation** after this ADR: **(1)** a **provider-specific** webhook that follows **31** and fills **TBDs**; or **(2)** non-production, **disabled** composition or test-only modules that **cannot** be confused with production and **do not** expose a listener without the baseline in **D**.
+- **Allowed next implementation** after this ADR: **(1)** a **provider-specific** webhook that follows **31** and fills **TBDs**; or **(2)** non-production, **disabled** composition or test-only modules that **cannot** be confused with production and **do not** expose a listener without the baseline in **D**. For any **production** public listener or **production-targeted** webhook code path, **[N](#n-production-implementation-decision-checklist)** must also be **complete and traceable** (or explicitly revised) in addition to **M**.
 - **Prohibited:** A **public** URL that accepts billing posts **without** cryptographic verification of the relevant byte set (**31**), or that treats **TBD** numeric limits as “infinite in prod.”
 - **CI/tests (future code):** Forged, replay, duplicate idempotent, oversize, invalid, and **category**-only observability — per **31** and **K**. **K** and **M**.
 
@@ -156,6 +156,42 @@ This ADR **records or constrains** product and security **decisions** left open 
 
 ---
 
+## N. Production implementation decision checklist
+
+**Purpose:** Make explicit which **product / security / ops** decisions must be **recorded and traceable** (outside this repository or via a revised ADR) **before** any **production-targeted** public billing webhook work ships or before a **production** listener is enabled. This section **does not** assign numeric values, select a provider, or authorize implementation; placeholders in **B**, **G**, and **L** remain **TBD** until stakeholders fill them.
+
+**Default posture (unchanged):** **No** production public billing HTTP ingress **and no** production listener accepting untrusted Internet billing posts until the checklist below is **complete** for the intended environment **or** public ingress is **provably** impossible to enable in production (config / no listener), consistent with **31**, **G**, **J**, and **M**.
+
+### N.1 Implementation gates (normative)
+
+- **Until this checklist is complete:** only **operator** normalized ingest and UC-05 apply (see [operator runbook](../../backend/docs/billing_operator_ingest_apply_runbook.md)), plus **non-production** or **test-only** harnesses that **cannot** be mistaken for production, are within the **allowed** posture for billing facts. Align with **31** (fail-closed, no raw body in ledger/audit as norm).
+- **Disabled-by-default composition / skeleton code** (if ever proposed) is **not** a substitute for this checklist: it is **only** permissible when it **cannot** accept public production traffic, is **off** by default in all production-shaped configs, and **tests** (future code) demonstrate **no** accidental production exposure—still **no** production listener until checklist + **M** are satisfied.
+- **Production webhook route / listener** remains **blocked** until every **“Required before enabling prod listener”** row applicable to the deployment is satisfied **and** numeric **TBD** placeholders in **B** / **G** / **L** are either **replaced** with approved values **or** superseded by a written **“ingress disabled in prod”** gate.
+
+### N.2 Decision items (provider / security / ops)
+
+Each item must be **explicitly decided** and **referenced** (e.g. product/security ticket or ADR revision); **do not** treat silence as approval.
+
+| # | Decision | Gate |
+|---|----------|------|
+| N2.1 | **Payment provider** and **supported regions** are chosen and recorded (criteria **C**; not asserted in this repo until written elsewhere). | Required before production webhook code |
+| N2.2 | **Authenticity mechanism** (primary class per environment: symmetric MAC, asymmetric with pinned keys, and/or mTLS augmentation per **D**) is chosen and recorded **with** the provider integration. | Required before production webhook code |
+| N2.3 | **Secret / key rotation**: owning **role** (e.g. security ops), procedure, and **timeline** for cutover and incident on leak (**E**) are agreed. | Required before production webhook code |
+| N2.4 | **Replay window** (`<REPLAY_WINDOW_TBD>`) and **timestamp skew** (`<TIMESTAMP_SKEW_TBD>`) are agreed together (**F**, **L3**). | Required before enabling prod listener |
+| N2.5 | **Max raw request body** (`<MAX_REQUEST_BODY_TBD>`) and **JSON / parser depth bounds** (`<MAX_JSON_DEPTH_TBD>`) are agreed (**G**, **L4**). | Required before enabling prod listener |
+| N2.6 | **Rate limits**: sustained (`<RATE_SUSTAIN_TBD>`) and burst (`<BURST_TBD>`) policy and ownership are agreed (**G**, **L5**). | Required before enabling prod listener |
+| N2.7 | **Dedicated raw evidence store**: yes/no, retention, legal hold, and access model decided if “yes” (**H**, **L6**); default remains **no raw** in ledger/audit. | Required before production webhook code |
+| N2.8 | **Logging / metrics redaction**: forbidden fields (no raw body, no secrets, category-only failure signals per **31** / [12](12-observability-boundary.md)) agreed with observability owners. | Required before production webhook code |
+| N2.9 | **Idempotency key** source after trust (`billing_provider_key`, `external_event_id`) and **duplicate** / provider-retry behavior aligned with ledger semantics (**31**, **F**) are agreed. | Required before production webhook code |
+| N2.10 | **UC-05 relationship**: **ingest-only** vs any **auto-apply** is **explicitly** decided; **MVP default** remains ingest-only (**I**, **L7**); any auto-apply needs a **separate** explicit record. | Required before production webhook code |
+| N2.11 | **Multi-provider routing** in one deployment: yes/no and isolation model if yes (**L8**, **31** multi-provider note). | Required before production webhook code |
+| N2.12 | **Non-prod / test harness scope**: which environments may run parsers or partial integrations without production credentials or routes. | Required before production webhook code |
+| N2.13 | **Monitoring / alerting**: which **failure categories** from **31** drive alerts and dashboards ([12](12-observability-boundary.md)); no raw payload in alert text. | Required before enabling prod listener |
+| N2.14 | **Incident response** and **provider outage** behavior (reject vs queue; operator fallback via operator ingest) agreed with on-call model. | Required before enabling prod listener |
+| N2.15 | **Go / no-go** for production listener: sign-off by **named role** (e.g. product owner, security lead, ops lead)—**not** a personal name requirement in this document—confirming N2.1–N2.14 applicable to the environment. | Required before enabling prod listener |
+
+---
+
 ## Non-goals (this ADR)
 
 - HTTP server code, routes, or SDKs; signature verification code; database migrations; CI changes; any concrete secret or DSN; raw provider webhook **examples**; final vendor selection **as fact** without a product record.
@@ -167,3 +203,4 @@ This ADR **records or constrains** product and security **decisions** left open 
 | Version | Date | Note |
 |--------|------|------|
 | 1.0 | 2026-04-25 | Initial: decision gate after **31**; **TBD** placeholders and defaults as above. |
+| 1.1 | 2026-04-26 | Added **N** production implementation decision checklist and gates; **J** clarifies production requires **N** + **M**. |

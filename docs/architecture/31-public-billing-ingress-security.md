@@ -4,7 +4,7 @@
 
 **Proposed** — design-only. This document does **not** implement any HTTP server, provider parser, signature verification, migrations, or runtime changes to today’s operator ingest / UC-05 apply path.
 
-**Related decision record (product/security gate before implementation):** [32 — Public billing ingress decisions ADR](32-public-billing-ingress-decisions-adr.md) — selection criteria, authenticity baseline, TBD numeric limits, rotation, evidence, ingest vs auto-apply.
+**Related decision record (product/security gate before implementation):** [32 — Public billing ingress decisions ADR](32-public-billing-ingress-decisions-adr.md) — selection criteria, authenticity baseline, TBD numeric limits, rotation, evidence, ingest vs auto-apply; **[production checklist §N](32-public-billing-ingress-decisions-adr.md#n-production-implementation-decision-checklist)** lists decisions required before production webhook code or a prod listener.
 
 ### Context
 

@@ -4,6 +4,8 @@
 
 Manual, operator-only sequence: **one** normalized fact → ledger/audit **ingest** (`billing_ingestion_main`), then **UC-05 apply** by stable `internal_fact_ref` (`billing_subscription_apply_main`). This is not a public webhook, not a provider parser, not a background worker, and not an automatic chain between the two entrypoints in application code.
 
+**Public billing HTTP ingress** remains **out of scope** here and **blocked** for production until the decision checklist in [32 — Public billing ingress decisions ADR §N](../../docs/architecture/32-public-billing-ingress-decisions-adr.md#n-production-implementation-decision-checklist) is complete (or ingress is provably disabled in prod); this runbook is the current **operator-only** safe path.
+
 ## Prerequisites
 
 - Shell from the `backend/` directory with `PYTHONPATH=src` or an editable install so `app` imports resolve.
