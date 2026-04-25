@@ -122,6 +122,23 @@ class PostgresIssuanceStateRepository:
     def __init__(self, pool: asyncpg.Pool) -> None:
         self._pool = pool
 
+    async def fetch_by_issue_keys(
+        self, *, internal_user_id: str, issue_idempotency_key: str
+    ) -> IssuanceStateRow | None:
+        """Read-only lookup for idempotent issue / revoke without mutating state."""
+        try:
+            async with self._pool.acquire() as conn:
+                cur = await conn.fetchrow(
+                    self._SELECT_BY_KEYS,
+                    internal_user_id,
+                    issue_idempotency_key,
+                )
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
+        if cur is None:
+            return None
+        return _row_to_domain(cur)
+
     async def issue_or_get(
         self,
         *,

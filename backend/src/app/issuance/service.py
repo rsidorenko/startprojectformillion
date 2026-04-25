@@ -1,7 +1,14 @@
 """
-In-process config issuance orchestration: entitlement, idempotency, provider calls.
+Config issuance orchestration: entitlement, idempotency, provider calls.
 
-Durable only inside the process: no cross-restart guarantee (see tests/docstrings).
+Process-local idempotency and audit always apply. Optionally, an
+:class:`~app.issuance.operational_state.IssuanceOperationalStatePort` (e.g.
+:class:`~app.persistence.postgres_issuance_state.PostgresIssuanceStateRepository`)
+persists ISSUE / REVOKE operational state across process restarts.
+
+RESEND idempotency (``_resend_cached``) and resend ledger reads remain **process-local
+only** in this slice; a new process after a durable ISSUE does not load issuance into
+memory for RESEND — durable RESEND is a future sub-slice (see design doc 33).
 """
 
 from __future__ import annotations
@@ -21,6 +28,9 @@ from app.issuance.contracts import (
     RevokeAccessOutcome,
 )
 from app.issuance.entitlement import issue_resend_denial_category, subscription_allows_issue_resend
+from app.issuance.operational_state import IssuanceOperationalStatePort
+from app.persistence.issuance_state_record import IssuanceStatePersistence, IssuanceStateRow
+from app.security.errors import PersistenceDependencyError
 from app.shared.correlation import is_valid_correlation_id
 
 if TYPE_CHECKING:
@@ -44,14 +54,20 @@ def _issuance_ledger_key(internal_user_id: str, issue_idempotency_key: str) -> t
 
 class IssuanceService:
     """
-    In-memory idempotency and optional in-memory audit records (no persistence).
+    Idempotency and category-only audit.
 
-    Revoke is allowed when a ledger entry exists for the linked issue key, even if the
-    subscription is no longer ACTIVE (cleanup / expire path); issue and resend still require ACTIVE.
+    When ``operational_state`` is set, successful ISSUE and REVOKE outcomes are reflected
+    at rest (via the port). RESEND remains in-process only (no durable resend cache).
     """
 
-    def __init__(self, provider: IssuanceProviderPort) -> None:
+    def __init__(
+        self,
+        provider: IssuanceProviderPort,
+        *,
+        operational_state: IssuanceOperationalStatePort | None = None,
+    ) -> None:
         self._provider = provider
+        self._operational_state = operational_state
         self._ledger: dict[tuple[str, str], _LedgerEntry] = {}
         self._issue_idempotent_result: dict[tuple[str, str], IssuanceServiceResult] = {}
         self._revoke_completed: set[tuple[str, str]] = set()
@@ -99,9 +115,27 @@ class IssuanceService:
     ) -> _LedgerEntry | None:
         return self._ledger.get(_issuance_ledger_key(internal_user_id, issue_idempotency_key))
 
+    def _sync_issued_memory(self, lk: tuple[str, str], issuance_ref: str) -> None:
+        self._ledger[lk] = _LedgerEntry(issuance_ref=issuance_ref, state=_LedgerState.ISSUED)
+        res = IssuanceServiceResult(
+            category=IssuanceOutcomeCategory.ISSUED, safe_ref=issuance_ref
+        )
+        self._issue_idempotent_result[lk] = res
+
+    def _sync_from_durable_issued_row(self, lk: tuple[str, str], row: IssuanceStateRow) -> None:
+        self._sync_issued_memory(lk, row.provider_issuance_ref)
+
+    def _sync_revoked_memory(self, lk: tuple[str, str], issuance_ref: str) -> None:
+        self._ledger[lk] = _LedgerEntry(issuance_ref=issuance_ref, state=_LedgerState.REVOKED)
+        if lk in self._issue_idempotent_result:
+            del self._issue_idempotent_result[lk]
+
     def _ok(self, request: IssuanceRequest, result: IssuanceServiceResult) -> IssuanceServiceResult:
         self._append_audit(request, result.category)
         return result
+
+    def _persist_fail(self, request: IssuanceRequest) -> IssuanceServiceResult:
+        return self._ok(request, IssuanceServiceResult(category=IssuanceOutcomeCategory.INTERNAL_ERROR))
 
     async def execute(self, request: IssuanceRequest) -> IssuanceServiceResult:
         bad = self._validate_basics(request)
@@ -138,6 +172,30 @@ class IssuanceService:
                 ),
             )
 
+        store = self._operational_state
+        if store is not None:
+            try:
+                row = await store.fetch_by_issue_keys(
+                    internal_user_id=u, issue_idempotency_key=key
+                )
+            except (PersistenceDependencyError, ValueError):
+                return self._persist_fail(request)
+            if row is not None:
+                if row.state is IssuanceStatePersistence.ISSUED:
+                    self._sync_from_durable_issued_row(lk, row)
+                    return self._ok(
+                        request,
+                        IssuanceServiceResult(
+                            category=IssuanceOutcomeCategory.ALREADY_ISSUED,
+                            safe_ref=row.provider_issuance_ref,
+                        ),
+                    )
+                if row.state is IssuanceStatePersistence.REVOKED:
+                    return self._ok(
+                        request,
+                        IssuanceServiceResult(category=IssuanceOutcomeCategory.INTERNAL_ERROR, safe_ref=None),
+                    )
+
         pr = await self._provider.create_or_ensure_access(
             internal_user_id=u, idempotency_key=key, correlation_id=request.correlation_id
         )
@@ -146,11 +204,22 @@ class IssuanceService:
                 return self._ok(
                     request, IssuanceServiceResult(category=IssuanceOutcomeCategory.INTERNAL_ERROR)
                 )
-            self._ledger[lk] = _LedgerEntry(issuance_ref=pr.issuance_ref, state=_LedgerState.ISSUED)
+            if store is not None:
+                try:
+                    persisted = await store.issue_or_get(
+                        internal_user_id=u,
+                        issue_idempotency_key=key,
+                        provider_issuance_ref=pr.issuance_ref,
+                    )
+                except (PersistenceDependencyError, ValueError):
+                    return self._persist_fail(request)
+                issuance_ref = persisted.provider_issuance_ref
+            else:
+                issuance_ref = pr.issuance_ref
+            self._sync_issued_memory(lk, issuance_ref)
             res = IssuanceServiceResult(
-                category=IssuanceOutcomeCategory.ISSUED, safe_ref=pr.issuance_ref
+                category=IssuanceOutcomeCategory.ISSUED, safe_ref=issuance_ref
             )
-            self._issue_idempotent_result[lk] = res
             return self._ok(request, res)
         if pr.outcome is CreateAccessOutcome.UNAVAILABLE:
             return self._ok(
@@ -222,6 +291,24 @@ class IssuanceService:
             )
 
         le = self._get_ledger(u, link)
+        store = self._operational_state
+        if le is None and store is not None:
+            try:
+                row = await store.fetch_by_issue_keys(internal_user_id=u, issue_idempotency_key=link)
+            except (PersistenceDependencyError, ValueError):
+                return self._persist_fail(request)
+            if row is None:
+                return self._ok(
+                    request, IssuanceServiceResult(category=IssuanceOutcomeCategory.NOT_ENTITLED, safe_ref=None)
+                )
+            if row.state is IssuanceStatePersistence.REVOKED:
+                self._revoke_completed.add(rdone)
+                self._sync_revoked_memory(lk, row.provider_issuance_ref)
+                return self._ok(
+                    request, IssuanceServiceResult(category=IssuanceOutcomeCategory.REVOKED, safe_ref=None)
+                )
+            le = _LedgerEntry(issuance_ref=row.provider_issuance_ref, state=_LedgerState.ISSUED)
+
         if le is None:
             return self._ok(
                 request, IssuanceServiceResult(category=IssuanceOutcomeCategory.NOT_ENTITLED, safe_ref=None)
@@ -239,9 +326,16 @@ class IssuanceService:
             correlation_id=request.correlation_id,
         )
         if rr.outcome is RevokeAccessOutcome.REVOKED or rr.outcome is RevokeAccessOutcome.ALREADY_REVOKED:
-            self._ledger[lk] = _LedgerEntry(issuance_ref=le.issuance_ref, state=_LedgerState.REVOKED)
-            if lk in self._issue_idempotent_result:
-                del self._issue_idempotent_result[lk]
+            if store is not None:
+                try:
+                    persisted = await store.mark_revoked(internal_user_id=u, issue_idempotency_key=link)
+                except (PersistenceDependencyError, ValueError):
+                    return self._persist_fail(request)
+                if persisted is None:
+                    return self._persist_fail(request)
+                self._sync_revoked_memory(lk, persisted.provider_issuance_ref)
+            else:
+                self._sync_revoked_memory(lk, le.issuance_ref)
             self._revoke_completed.add(rdone)
             return self._ok(
                 request, IssuanceServiceResult(category=IssuanceOutcomeCategory.REVOKED, safe_ref=None)
@@ -255,3 +349,6 @@ class IssuanceService:
                 request, IssuanceServiceResult(category=IssuanceOutcomeCategory.PROVIDER_REJECTED)
             )
         return self._ok(request, IssuanceServiceResult(category=IssuanceOutcomeCategory.INTERNAL_ERROR))
+
+
+__all__ = ["IssuanceService"]
