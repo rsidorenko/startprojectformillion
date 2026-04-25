@@ -159,6 +159,7 @@ Normalized **categories** (for logs/metrics/audit/structured handling); **not** 
 ### L. Open questions (product / security / implementation follow-up)
 
 **Policy checklist (provider criteria, storage tiers, delivery taxonomy; no vendor selected):** [36 — Access / config provider selection and storage / delivery material policy](36-access-config-provider-and-storage-policy.md).
+**Decision sequencing and hard stops across billing ingress and delivery policy tracks:** [37 — Access delivery vs billing ingress decision sequencing](37-access-delivery-billing-ingress-decision-sequencing.md).
 
 - **Access / config provider** choice and deployment model.
 - **Storage** model for opaque references vs any held sensitive material; encryption-at-rest and key management if ever required.

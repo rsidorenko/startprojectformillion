@@ -17,6 +17,8 @@
 
 ### B. Purpose
 
+Decision order and hard-stop dependencies across ADR-32, envelope 35, this policy, and 33 follow-ups are summarized in [37 — Access delivery vs billing ingress decision sequencing](37-access-delivery-billing-ingress-decision-sequencing.md).
+
 1. Record **selection criteria** for a future **real** access/config provider (without naming one).
 2. Record **storage tiers** and **security requirements** for references vs any **held** sensitive material (policy level only — no KMS product, no key material).
 3. Define a **delivery material taxonomy** and map it to **allowed channels** under current posture, aligned with [35](35-user-facing-safe-access-delivery-envelope.md) and [07](07-telegram-bot-application-boundary.md).
