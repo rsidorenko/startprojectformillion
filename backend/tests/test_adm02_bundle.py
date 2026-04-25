@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
+import json
 
 import httpx
 from starlette.applications import Starlette
@@ -56,6 +57,18 @@ from app.persistence.reconciliation_runs_contracts import (
 )
 from app.persistence.reconciliation_runs_in_memory import InMemoryReconciliationRunsRepository
 from app.shared.correlation import new_correlation_id
+
+_FORBIDDEN_BUNDLE_FRAGMENTS = (
+    "external_event_id",
+    "provider_issuance_ref",
+    "issue_idempotency_key",
+    "database_url",
+    "postgres://",
+    "postgresql://",
+    "bearer ",
+    "private key",
+    "raw_provider_payload",
+)
 
 
 def _run(coro):
@@ -504,6 +517,96 @@ def test_build_adm02_internal_diagnostics_starlette_app_with_persistence_backing
         assert record.capability_class == ADM02_CAPABILITY_CLASS
         assert record.internal_user_scope_ref == "u1"
         assert record.disclosure is Adm02FactOfAccessDisclosureCategory.UNREDACTED
+
+    _run(main())
+
+
+def test_adm02_bundle_persistence_backed_response_never_leaks_sensitive_internal_fragments() -> None:
+    correlation_id = new_correlation_id()
+    expected_now = datetime(2026, 4, 16, 12, 34, 56, tzinfo=UTC)
+    persisted = InMemoryAdm02FactOfAccessRecordAppender()
+    ledger = InMemoryBillingEventsLedgerRepository()
+    quarantine_repo = InMemoryMismatchQuarantineRepository()
+    recon_repo = InMemoryReconciliationRunsRepository()
+    deps = Adm02InternalDiagnosticsPersistenceBackedDependencies(
+        identity=_IdentityStub(),
+        billing_ledger_repository=ledger,
+        mismatch_quarantine_repository=quarantine_repo,
+        reconciliation_runs_repository=recon_repo,
+        fact_of_access_appender=persisted,
+        now_provider=lambda: expected_now,
+        redaction=None,
+        adm02_allowlisted_internal_admin_principal_ids=("p1",),
+    )
+    app = build_adm02_internal_diagnostics_starlette_app_with_persistence_backing(deps)
+
+    async def main() -> None:
+        sensitive_blob = (
+            "external_event_id/provider_issuance_ref/issue_idempotency_key/"
+            "DATABASE_URL/postgres://postgresql://Bearer PRIVATE KEY/raw_provider_payload"
+        )
+        await ledger.append_or_get_by_provider_and_external_id(
+            _make_billing_record(
+                internal_fact_ref="opaque-fact-1",
+                internal_user_id="u1",
+                external_event_id=sensitive_blob,
+            )
+        )
+        await quarantine_repo.upsert_by_source(
+            _make_mismatch_quarantine_record(
+                record_id="q-sensitive",
+                source_ref_id=sensitive_blob,
+                internal_user_id="u1",
+                reason_code=MismatchQuarantineReasonCode.NEEDS_REVIEW,
+                created_at=datetime(2026, 4, 15, 11, 0, 0, tzinfo=UTC),
+                updated_at=datetime(2026, 4, 16, 9, 0, 0, tzinfo=UTC),
+            )
+        )
+        await recon_repo.append_run_record(
+            _make_reconciliation_run_record(
+                run_id=sensitive_blob,
+                internal_user_id="u1",
+                outcome=ReconciliationRunOutcome.FACTS_DISCOVERED,
+                started_at=datetime(2026, 4, 16, 11, 0, 0, tzinfo=UTC),
+            )
+        )
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                ADM02_INTERNAL_DIAGNOSTICS_PATH,
+                json={
+                    "correlation_id": correlation_id,
+                    "internal_admin_principal_id": "p1",
+                    "internal_user_id": "u-target",
+                },
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["outcome"] == "success"
+        assert body["summary"] is not None
+        summary = body["summary"]
+        assert summary is not None
+        assert summary["internal_fact_refs"] == ["opaque-fact-1"]
+        assert set(summary.keys()) == {
+            "billing_category",
+            "internal_fact_refs",
+            "quarantine_marker",
+            "quarantine_reason_code",
+            "reconciliation_last_run_marker",
+            "redaction",
+        }
+        assert all(ref.startswith("opaque-") for ref in summary["internal_fact_refs"])
+
+        payload_lower = json.dumps(body, sort_keys=True).lower()
+        response_text_lower = response.text.lower()
+        body_repr_lower = repr(body).lower()
+        for forbidden in _FORBIDDEN_BUNDLE_FRAGMENTS:
+            assert forbidden not in payload_lower
+            assert forbidden not in response_text_lower
+            assert forbidden not in body_repr_lower
+        assert "internal_fact_refs" in payload_lower
 
     _run(main())
 
