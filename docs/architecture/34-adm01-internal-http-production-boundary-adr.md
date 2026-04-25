@@ -2,13 +2,13 @@
 
 **Status:** Proposed
 
-**Scope:** This document records architecture and security decisions for a *future* optional production exposure of the ADM-01 internal HTTP surface. **Nothing in this ADR is implemented in application code as of the authoring baseline** (no listening socket, no production mount of ADM-01).
+**Scope:** This document records architecture and security decisions for a *future* optional production exposure of the ADM-01 internal HTTP surface. **Implemented today:** typed env configuration and validation guards for `ADM01_INTERNAL_HTTP_*` in `backend/src/app/internal_admin/adm01_http_config.py` (`Adm01InternalHttpConfig`), with unit tests — **no** listening socket, **no** ASGI server dependency in the repository, **no** standalone listener process, and **no** production mount of ADM-01 over TCP.
 
 ---
 
 ## A. Context
 
-- The **current live runtime** is Telegram **polling**; there is **no** admin HTTP listener in the polling process.
+- The **current live runtime** is Telegram **polling** (`python -m app.runtime` → `telegram_httpx_live_main`); there is **no** admin HTTP listener in the polling process.
 - **ADM-01** exists in code as a **Starlette/ASGI** composition (`create_adm01_internal_http_app` and wiring) that maps JSON to `execute_adm01_endpoint` — a thin HTTP-oriented bridge over the existing domain handler, not a new business capability by itself.
 - The **in-process composition check** (`httpx.ASGITransport`, no TCP listen) validates the composed app against PostgreSQL-backed issuance where enabled; it does **not** establish network or production security.
 - **Production exposure** of the same app behind a real TCP listener would create a **new network and runtime boundary** (separate from polling), requiring explicit transport trust, bind policy, pool lifecycle, and operations agreements **before** any such code is merged.
@@ -23,7 +23,18 @@
 | **A** | In-process mount in the same OS process as Telegram polling | **Allowed only** if a **strong single-process deployment constraint** is explicitly documented and accepted (e.g. single container PID limit, one binary policy); requires explicit pool/lifecycle analysis. |
 | **C** | No production HTTP mount; operator checks and in-process ASGI tests only | Valid when product/ops do not need a reachable admin HTTP endpoint in production; use existing advisory checks and runbooks. |
 
-**Status of implementation:** A production ADM-01 **listening** server is **not** implemented; this ADR is the prerequisite contract for a future **Agent** implementation slice.
+**ASGI server for future standalone (Option B):** **uvicorn** is the **intended** ASGI HTTP server for the first standalone ADM-01 listener implementation, unless a later ADR supersedes this choice.
+
+**Rationale (uvicorn):**
+
+- Common, well-understood pairing with **Starlette** (already a direct dependency).
+- Relatively small operational surface for an internal admin process.
+- Supports programmatic configuration and lifecycle hooks suitable for graceful shutdown ordering.
+- **Hypercorn** was considered as an alternative (HTTP/2, different deployment profiles) but is **not** selected for the MVP standalone slice to reduce decision surface; a future ADR may revisit if HTTP/2 or specific TLS termination models require it.
+
+**Dependency note:** This ADR does **not** add packages. A future implementation PR must add a **bounded** dependency in `backend/pyproject.toml` (for example `uvicorn` with a semver-pinned compatible range). Exact version bounds are decided in that implementation PR based on compatibility with the pinned `starlette` range and Python baseline.
+
+**Status of implementation:** Config guards for `ADM01_INTERNAL_HTTP_*` are **implemented** (see D). A production ADM-01 **TCP listener**, **uvicorn** (or other) dependency line, and **standalone process entrypoint** are **not** implemented; this ADR remains the contract for the next **Agent** implementation slice.
 
 ---
 
@@ -38,22 +49,24 @@
 
 ---
 
-## D. Environment / config contract (future implementation)
+## D. Environment / config contract
 
-**Conceptual** variable names for a future implementation — **not** implemented or wired today:
+**Implemented (guards only, no listener):** `backend/src/app/internal_admin/adm01_http_config.py` exposes `Adm01InternalHttpConfig`, `load_adm01_internal_http_config_from_env`, and `validate_adm01_internal_http_config`. These enforce bind and transport-trust policy when `ADM01_INTERNAL_HTTP_ENABLE` is true; when disabled, bind rules are inert. Tests live in `backend/tests/test_adm01_internal_http_config.py`.
+
+**Environment variables (aligned with code):**
 
 | Name | Role |
 |------|------|
-| `ADM01_INTERNAL_HTTP_ENABLE` | Master switch: when unset or false, no listener and no admin HTTP path. |
-| `ADM01_INTERNAL_HTTP_BIND_HOST` | Bind address (e.g. loopback vs interface); must default safely (see E). |
-| `ADM01_INTERNAL_HTTP_BIND_PORT` | TCP port for the listener. |
-| `ADM01_INTERNAL_HTTP_ALLOWLIST` | Configuration surface for allowlisted `internal_admin_principal_id` values (format TBD at implementation: comma-separated, file path, or other; **not** decided here). |
-| `ADM01_INTERNAL_HTTP_TRUST_REVERSE_PROXY` | Marker that termination and client identity are enforced **outside** the app (e.g. trusted edge); implementation must not treat JSON principal as sole trust when this is the only control. |
-| `ADM01_INTERNAL_HTTP_REQUIRE_MTLS` | When true, require mutual TLS (or fail closed) at the implementation boundary, per chosen ASGI server or sidecar. |
-| `ADM01_INTERNAL_HTTP_BIND_INSECURE_ALL_INTERFACES` | **Explicit** opt-in to bind `0.0.0.0` / all interfaces; must require documented network controls. |
-| `DATABASE_URL` | Datasource for PostgreSQL when issuance-backed read paths are composed (same class of secret as existing runtime; **never** log in observability or docs). |
+| `ADM01_INTERNAL_HTTP_ENABLE` | Master switch: when unset or false, no standalone ADM-01 HTTP listener must be opened by a future process (and today nothing listens). |
+| `ADM01_INTERNAL_HTTP_BIND_HOST` | Bind address; defaults in code to loopback-friendly `127.0.0.1` when unset. |
+| `ADM01_INTERNAL_HTTP_BIND_PORT` | TCP port for a **future** listener (validated range in code). |
+| `ADM01_INTERNAL_HTTP_BIND_INSECURE_ALL_INTERFACES` | Explicit opt-in required before binding all interfaces (`0.0.0.0`, `::`, `[::]`). |
+| `ADM01_INTERNAL_HTTP_TRUST_REVERSE_PROXY` | Marker that termination and client identity are enforced **outside** the app; required for certain non-loopback binds per code policy. |
+| `ADM01_INTERNAL_HTTP_REQUIRE_MTLS` | Marker for mutual TLS (or fail closed) at the implementation boundary; may be combined with reverse-proxy trust per code policy. |
+| `ADM01_INTERNAL_HTTP_ALLOWLIST` | Configuration surface for allowlisted `internal_admin_principal_id` values (format TBD at implementation: comma-separated, file path, or other; **not** part of `adm01_http_config.py` today). |
+| `DATABASE_URL` | Datasource class for PostgreSQL when issuance-backed read paths are composed (same class of secret as existing runtime; **never** log in observability or docs). |
 
-Runtime may reuse existing `APP_ENV` / `BOT_TOKEN` policies elsewhere; **this ADR does not** mandate merging ADM-01 with `load_runtime_config` until an implementation design explicitly chooses that.
+Runtime may reuse existing `APP_ENV` / `BOT_TOKEN` and `load_runtime_config` patterns (`backend/src/app/security/config.py`, `postgres_migrations_main`); the standalone process design should load database-related settings consistently with slice-1 Postgres usage **without** logging secrets.
 
 ---
 
@@ -76,14 +89,21 @@ Runtime may reuse existing `APP_ENV` / `BOT_TOKEN` policies elsewhere; **this AD
 
 ---
 
-## G. Pool and lifecycle
+## G. Pool, migrations, and lifecycle (future standalone process)
 
-- **Option B (recommended):** use a **dedicated** connection pool to PostgreSQL in the admin process unless a future ADR justifies sharing.
-- **Option A (if ever used):** explicitly decide:
-  - **shared pool** (with polling) vs **dedicated** pool;
-  - **Shutdown order** (stop listener → drain → close pool → stop polling, or a documented alternative);
-  - **Failure policy:** admin HTTP server crash must **not** by default take down polling unless a fail-closed policy is explicitly required and approved.
-- **Migrations** must be applied before serving read paths that depend on schema, **consistent** with existing slice-1 / Postgres runtime patterns in this repository (composition check already applies migrations in its opt-in path).
+**Target process model:** Option **B** — a **dedicated** OS process for ADM-01 internal HTTP, **not** sharing an event loop or connection pool with Telegram polling.
+
+**Recommended startup and shutdown order (future implementation):**
+
+1. Load **runtime / database** configuration from the environment (same secret discipline as today; patterns analogous to `load_runtime_config` and `postgres_migrations_main` — no new mandate to merge ADM-01 into a single config object unless the implementation PR chooses to).
+2. **Load and validate** ADM-01 internal HTTP settings via `load_adm01_internal_http_config_from_env` / `validate_adm01_internal_http_config`. If not enabled, the process must **not** open a listener and should exit cleanly according to the chosen entrypoint contract.
+3. **Apply database migrations** before serving read paths that depend on schema (consistent with existing slice-1 Postgres patterns; the composition check already applies migrations on its opt-in path).
+4. Open a **dedicated** asyncpg (or equivalent) **connection pool** for this process only — **no** pool sharing with the Telegram polling process.
+5. Build the ADM-01 **Starlette** ASGI application from existing wiring (`build_adm01_internal_lookup_http_app` / bundle helpers).
+6. Start the **uvicorn** listener bound per validated `Adm01InternalHttpConfig` (host/port).
+7. On **graceful shutdown:** stop accepting new connections, **drain** in-flight work, **close the pool**, then terminate the process.
+
+**Option A (if ever used):** explicitly decide shared vs dedicated pool, shutdown order, and failure policy so admin HTTP failure does not silently take down polling unless explicitly required.
 
 ---
 
@@ -99,13 +119,15 @@ Runtime may reuse existing `APP_ENV` / `BOT_TOKEN` policies elsewhere; **this AD
 
 ## I. Test matrix (future implementation)
 
-When code is added, the following are **candidates** for tests (not exhaustive; implementation may merge cases):
+When listener and process code are added, extend beyond today’s coverage. **Already delivered:** config guard tests (enable/bind/insecure override/trust markers, no secret echo in errors) in `backend/tests/test_adm01_internal_http_config.py` — **reuse** and extend rather than duplicate.
 
-- Listener **disabled** by default.
+**Additional candidates** when the server exists:
+
+- Listener **disabled** by default at the process/entrypoint level when `ADM01_INTERNAL_HTTP_ENABLE` is off.
 - **Loopback** default for bind when enabled (unless explicit host override).
-- **`0.0.0.0` / all-interfaces** bind **rejected** without the explicit insecure / all-interfaces override.
+- **`0.0.0.0` / all-interfaces** bind **rejected** without the explicit insecure / all-interfaces override (already covered for config).
 - **Allowlist** denies unknown principal; allow path returns expected **shape** (no new schema changes assumed here).
-- **Transport trust** marker: fail closed or no listener when required trust configuration is missing (per implementation choice per D).
+- **Transport trust** markers reflected in operational behavior per deployment (in addition to config validation).
 - **No provider ref leakage** in responses and redaction invariants (consistent with existing adapter and composition checks).
 - **Dependency failure** (e.g. DB) maps to a **fail-closed** or safe error path without data leaks.
 - **Graceful shutdown** closes the pool and listener in documented order.
@@ -124,28 +146,33 @@ When code is added, the following are **candidates** for tests (not exhaustive; 
 
 ## K. Non-goals (this ADR)
 
-- Implementing an ASGI server, binding a port, or production mount.
-- Choosing a concrete ASGI server **dependency** (uvicorn, hypercorn, etc.).
+- Implementing a **TCP listener**, binding a port, adding **uvicorn** (or any ASGI server) to `pyproject.toml`, or production mount of ADM-01.
 - Modifying Telegram **polling** entrypoints or the poll loop.
-- Changing **CI** workflows, **migrations**, or the **ADM-01 JSON response schema**.
+- Changing **CI** workflows, application **migration** code, or the **ADM-01 JSON response schema** in this documentation-only update.
 - Exposing `provider_issuance_ref` or other secrets in any API.
-- Defining private infrastructure hostnames, IP ranges, or production ports in this document.
+- Embedding private infrastructure hostnames, IP ranges, literal production port numbers, or sample **DATABASE_URL** values in this document.
 
 ---
 
 ## L. Acceptance criteria for a future Agent implementation slice (informative)
 
-- **Config guard** tests for enable/bind/insecure-override and trust markers.
+- Add **`uvicorn`** (or documented supersession) as a **bounded** dependency in `backend/pyproject.toml` with justification tied to this ADR.
+- **Standalone entrypoint** for Option B: disabled by default when `ADM01_INTERNAL_HTTP_ENABLE` is off; no listener in that mode.
+- **Reuse and extend** existing **config guard** tests; add tests for process/entrypoint and listener behavior as needed.
+- **Migrations applied before serving** read paths that depend on schema.
+- **Graceful shutdown** closes the pool and stops the listener in documented order.
+- **No** change to Telegram **polling** behavior or its tests as regression requirements.
 - **Redaction** tests (no provider refs, no DSN in logs where applicable to the new code).
 - **ASGI app** / handler tests consistent with existing composition patterns.
 - **Process lifecycle** tests if feasible (shutdown, pool close).
 - **Runbook** updates for deployers (separate from this ADR file as needed).
-- **CI** green for the code paths the workflow triggers; path filters may or may not run on docs-only commits (expected).
+- **CI** green for the code paths the workflow triggers; path filters may skip workflows on docs-only commits (expected).
 
 ---
 
 ## Changelog (documentation)
 
+- **Revision (post–config guards):** Documented that `Adm01InternalHttpConfig` and env guards are **implemented** (no listener). Recorded **uvicorn** as the intended ASGI server for the future standalone process; **hypercorn** noted as non-MVP alternative. Added explicit lifecycle: migrations → dedicated pool → build Starlette app → uvicorn listen → graceful shutdown. Updated non-goals and acceptance criteria accordingly.
 - **Proposed ADR** introduced to fix production boundary, env contract, and process-model recommendation before any `ADM01_INTERNAL_HTTP_*` implementation.
 
 ---
