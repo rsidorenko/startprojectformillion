@@ -29,6 +29,8 @@
 
 **Что фиксирует этот шаг**: минимальный, безопасный и расширяемый контракт “Telegram update → normalized intent → application use-case → normalized response class”, включая запреты (что не должно попадать в bot layer) и обязательные security boundaries.
 
+**Связанный конверт (proposed):** безопасные классы user-facing ответов для access resend — [35-user-facing-safe-access-delivery-envelope.md](35-user-facing-safe-access-delivery-envelope.md).
+
 ---
 
 ### Scope

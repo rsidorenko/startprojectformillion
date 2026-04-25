@@ -111,6 +111,8 @@ flowchart LR
 
 **If product has not yet chosen a delivery model**, treat the following as **open questions** (not decisions in this doc): short **instruction** message; **support handoff**; **redacted reference**; **other** safe model; and whether a “sensitive delivery material” class (distinct from non-secret instruction) is needed per [10](10-config-issuance-abstraction.md).
 
+**Proposed envelope:** user-facing safe response classes and mapping intent (Telegram resend context) — [35-user-facing-safe-access-delivery-envelope.md](35-user-facing-safe-access-delivery-envelope.md).
+
 ---
 
 ### I. Relationship to admin / support
