@@ -2,6 +2,16 @@
 
 **Status:** Proposed
 
+## Implementation status
+
+| Area | Repo status |
+|------|-------------|
+| Config guards (`Adm01InternalHttpConfig`) | Implemented |
+| Standalone entrypoint (`python -m app.internal_admin`) | Implemented |
+| Enabled-mode allowlist requirement | Implemented |
+| Production deployment/network controls (private network + trusted reverse proxy and/or mTLS) | Environment responsibility; not proven by repo-only checks |
+| Public internet exposure | Not allowed by default |
+
 **Scope:** This document records architecture and security decisions for optional production exposure of the ADM-01 internal HTTP surface. **Implemented today:** typed env configuration and validation guards for `ADM01_INTERNAL_HTTP_*`, standalone entrypoint `python -m app.internal_admin`, bounded `uvicorn` dependency, and enabled-mode listener startup with fixed stderr categories. Deployment/network safety constraints in this ADR remain mandatory for production.
 
 ---
