@@ -13,6 +13,7 @@ on:
       - "backend/scripts/run_postgres_mvp_smoke.py"
       - "backend/scripts/run_slice1_retention_dry_run.py"
       - "backend/scripts/check_admin_support_internal_read_gate.py"
+      - "backend/scripts/check_adm01_postgres_issuance_composition.py"
       - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
       - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
@@ -34,6 +35,7 @@ on:
       - "backend/scripts/run_postgres_mvp_smoke.py"
       - "backend/scripts/run_slice1_retention_dry_run.py"
       - "backend/scripts/check_admin_support_internal_read_gate.py"
+      - "backend/scripts/check_adm01_postgres_issuance_composition.py"
       - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
       - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
@@ -219,6 +221,14 @@ jobs:
 
       - name: Prepare test reports directory
         run: mkdir -p "$REPORT_DIR"
+
+      - name: Run ADM-01 Postgres issuance composition check (advisory)
+        id: adm01_postgres_issuance_composition
+        continue-on-error: true
+        env:
+          DATABASE_URL: postgresql://slice1ret_ci:slice1retCILocal0nly@127.0.0.1:5432/slice1retention_ci
+          ADM01_POSTGRES_ISSUANCE_COMPOSITION_CHECK_ENABLE: "1"
+        run: python scripts/check_adm01_postgres_issuance_composition.py
 
       - name: Run opt-in slice-1 retention integration tests (PostgreSQL service)
         env:
