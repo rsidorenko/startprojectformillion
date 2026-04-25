@@ -23,6 +23,7 @@ from tests.slice1_expected_user_copy import (
     NEEDS_ONBOARDING_TEXT,
     RESEND_ACCESS_ACCEPTED_TEXT,
     RESEND_ACCESS_COOLDOWN_TEXT,
+    RESEND_ACCESS_NOT_ENABLED_TEXT,
     RESEND_ACCESS_NOT_ELIGIBLE_TEXT,
     RESEND_ACCESS_NOT_READY_TEXT,
     RESEND_ACCESS_TEMPORARILY_UNAVAILABLE_TEXT,
@@ -249,6 +250,7 @@ def test_catalog_outputs_cover_secret_and_markup_policy() -> None:
     ("message_key", "expected_text"),
     (
         (OutboundMessageKey.RESEND_ACCESS_ACCEPTED.value, RESEND_ACCESS_ACCEPTED_TEXT),
+        (OutboundMessageKey.RESEND_ACCESS_NOT_ENABLED.value, RESEND_ACCESS_NOT_ENABLED_TEXT),
         (OutboundMessageKey.RESEND_ACCESS_NOT_ELIGIBLE.value, RESEND_ACCESS_NOT_ELIGIBLE_TEXT),
         (OutboundMessageKey.RESEND_ACCESS_COOLDOWN.value, RESEND_ACCESS_COOLDOWN_TEXT),
         (OutboundMessageKey.RESEND_ACCESS_NOT_READY.value, RESEND_ACCESS_NOT_READY_TEXT),

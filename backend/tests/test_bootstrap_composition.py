@@ -9,6 +9,7 @@ import pytest
 
 from app.application.bootstrap import Slice1Composition, build_slice1_composition
 from app.application.handlers import BootstrapIdentityInput, GetSubscriptionStatusInput
+from app.application.telegram_access_resend import TelegramAccessResendInput, TelegramAccessResendOutcome
 from app.application.interfaces import SubscriptionSnapshot
 from app.persistence.in_memory import (
     InMemoryAuditAppender,
@@ -187,3 +188,37 @@ def test_idempotency_key_stable_for_replay() -> None:
     k1 = build_bootstrap_idempotency_key(1, 5)
     k2 = build_bootstrap_idempotency_key(1, 5)
     assert k1 == k2
+
+
+def test_access_resend_default_env_is_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def main() -> None:
+        monkeypatch.delenv("TELEGRAM_ACCESS_RESEND_ENABLE", raising=False)
+        c = build_slice1_composition()
+        out = await c.access_resend.handle(
+            TelegramAccessResendInput(
+                telegram_user_id=1,
+                telegram_update_id=1,
+                correlation_id=new_correlation_id(),
+            )
+        )
+        assert out.outcome is TelegramAccessResendOutcome.NOT_ENABLED
+
+    _run(main())
+
+
+def test_access_resend_env_enable_true_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def main() -> None:
+        for raw in ("1", "true", "yes"):
+            monkeypatch.setenv("TELEGRAM_ACCESS_RESEND_ENABLE", raw)
+            c = build_slice1_composition()
+            out = await c.access_resend.handle(
+                TelegramAccessResendInput(
+                    telegram_user_id=1,
+                    telegram_update_id=1,
+                    correlation_id=new_correlation_id(),
+                )
+            )
+            # With feature enabled but unknown user, handler reaches entitlement path.
+            assert out.outcome is TelegramAccessResendOutcome.NOT_ELIGIBLE
+
+    _run(main())

@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from typing import Callable, Protocol
 
 from app.application.interfaces import SubscriptionSnapshotReader, UserIdentityRepository
 from app.issuance.contracts import (
@@ -18,9 +18,18 @@ from app.shared.correlation import require_correlation_id
 from app.shared.types import SubscriptionSnapshotState
 
 TELEGRAM_ACCESS_RESEND_COOLDOWN_SECONDS = 60.0
+TELEGRAM_ACCESS_RESEND_ENABLE = "TELEGRAM_ACCESS_RESEND_ENABLE"
+
+
+def telegram_access_resend_enabled_from_env(
+    env_getter: Callable[[str], str | None],
+) -> bool:
+    raw = (env_getter(TELEGRAM_ACCESS_RESEND_ENABLE) or "").strip().lower()
+    return raw in ("1", "true", "yes")
 
 
 class TelegramAccessResendOutcome(str, Enum):
+    NOT_ENABLED = "not_enabled"
     RESEND_ACCEPTED = "resend_accepted"
     NOT_ELIGIBLE = "not_eligible"
     COOLDOWN = "cooldown"
@@ -93,13 +102,15 @@ class TelegramAccessResendHandler:
         issuance_service: IssuanceService | None,
         issuance_state_lookup: IssuanceStateForResendLookup | None,
         cooldown: AccessResendCooldownStore,
-        now_seconds: callable = time.time,
+        enabled: bool,
+        now_seconds: Callable[[], float] = time.time,
     ) -> None:
         self._identity = identity
         self._snapshots = snapshots
         self._issuance_service = issuance_service
         self._issuance_state_lookup = issuance_state_lookup
         self._cooldown = cooldown
+        self._enabled = enabled
         self._now_seconds = now_seconds
 
     async def handle(self, inp: TelegramAccessResendInput) -> TelegramAccessResendResult:
@@ -109,6 +120,11 @@ class TelegramAccessResendHandler:
         except ValueError:
             return TelegramAccessResendResult(
                 outcome=TelegramAccessResendOutcome.TEMPORARILY_UNAVAILABLE,
+                correlation_id=cid,
+            )
+        if not self._enabled:
+            return TelegramAccessResendResult(
+                outcome=TelegramAccessResendOutcome.NOT_ENABLED,
                 correlation_id=cid,
             )
 

@@ -203,6 +203,13 @@ def test_map_slice1_help_read_only() -> None:
 
 def test_access_resend_maps_to_stable_transport_codes() -> None:
     cid = new_correlation_id()
+    not_enabled = map_access_resend_to_transport(
+        TelegramAccessResendResult(
+            outcome=TelegramAccessResendOutcome.NOT_ENABLED,
+            correlation_id=cid,
+        )
+    )
+    assert not_enabled.code == TransportAccessResendCode.NOT_ENABLED.value
     accepted = map_access_resend_to_transport(
         TelegramAccessResendResult(
             outcome=TelegramAccessResendOutcome.RESEND_ACCEPTED,

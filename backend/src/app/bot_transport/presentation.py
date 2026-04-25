@@ -50,6 +50,7 @@ class TransportHelpCode(str, Enum):
 
 
 class TransportAccessResendCode(str, Enum):
+    NOT_ENABLED = "resend_access_not_enabled"
     RESEND_ACCEPTED = "resend_access_accepted"
     NOT_ELIGIBLE = "resend_access_not_eligible"
     COOLDOWN = "resend_access_cooldown"
@@ -169,7 +170,9 @@ def map_get_subscription_status_to_transport(
 
 def map_access_resend_to_transport(result: TelegramAccessResendResult) -> TransportSafeResponse:
     cid = result.correlation_id
-    if result.outcome is TelegramAccessResendOutcome.RESEND_ACCEPTED:
+    if result.outcome is TelegramAccessResendOutcome.NOT_ENABLED:
+        code = TransportAccessResendCode.NOT_ENABLED.value
+    elif result.outcome is TelegramAccessResendOutcome.RESEND_ACCEPTED:
         code = TransportAccessResendCode.RESEND_ACCEPTED.value
     elif result.outcome is TelegramAccessResendOutcome.NOT_ELIGIBLE:
         code = TransportAccessResendCode.NOT_ELIGIBLE.value

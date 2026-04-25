@@ -288,6 +288,13 @@ def test_guidance_without_next_action_hint_still_safe() -> None:
 
 def test_resend_transport_codes_map_to_safe_outbound_keys() -> None:
     cid = new_correlation_id()
+    safe_not_enabled = TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportAccessResendCode.NOT_ENABLED.value,
+        correlation_id=cid,
+    )
+    plan0 = map_transport_safe_to_outbound_plan(safe_not_enabled)
+    assert plan0.message_key == OutboundMessageKey.RESEND_ACCESS_NOT_ENABLED.value
     safe = TransportSafeResponse(
         category=TransportResponseCategory.SUCCESS,
         code=TransportAccessResendCode.RESEND_ACCEPTED.value,

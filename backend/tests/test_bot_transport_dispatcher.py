@@ -214,7 +214,7 @@ def test_dispatch_resend_access_command_routes_to_resend_flow() -> None:
         cid = new_correlation_id()
         r = await dispatch_slice1_transport(_env(cid=cid, uid=22, update_id=9, text="/resend_access"), c)
         assert r.category is TransportResponseCategory.SUCCESS
-        assert r.code == TransportAccessResendCode.NOT_ELIGIBLE.value
+        assert r.code == TransportAccessResendCode.NOT_ENABLED.value
         assert r.correlation_id == cid
 
     _run(main())
@@ -226,7 +226,7 @@ def test_dispatch_get_access_alias_routes_to_resend_flow() -> None:
         cid = new_correlation_id()
         r = await dispatch_slice1_transport(_env(cid=cid, uid=22, update_id=10, text="/get_access"), c)
         assert r.category is TransportResponseCategory.SUCCESS
-        assert r.code == TransportAccessResendCode.NOT_ELIGIBLE.value
+        assert r.code == TransportAccessResendCode.NOT_ENABLED.value
 
     _run(main())
 

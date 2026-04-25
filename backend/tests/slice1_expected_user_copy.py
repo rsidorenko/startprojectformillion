@@ -31,6 +31,8 @@ RESEND_ACCESS_ACCEPTED_TEXT = (
     "Access instructions request accepted. If safe delivery is available, instructions will be resent."
 )
 
+RESEND_ACCESS_NOT_ENABLED_TEXT = "This feature is not available yet."
+
 RESEND_ACCESS_NOT_ELIGIBLE_TEXT = (
     "Access instructions cannot be resent for this account right now."
 )

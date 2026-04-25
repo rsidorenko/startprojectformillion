@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
@@ -12,6 +13,7 @@ from app.application.telegram_access_resend import (
     InMemoryAccessResendCooldownStore,
     IssuanceStateForResendLookup,
     TelegramAccessResendHandler,
+    telegram_access_resend_enabled_from_env,
 )
 from app.application.interfaces import (
     AuditAppender,
@@ -57,6 +59,7 @@ def build_slice1_composition(
     issuance_service: IssuanceService | None = None,
     issuance_state_lookup: IssuanceStateForResendLookup | None = None,
     resend_cooldown: AccessResendCooldownStore | None = None,
+    access_resend_enabled: bool | None = None,
 ) -> Slice1Composition:
     if (identity is None) ^ (idempotency is None):
         raise ValueError("identity and idempotency must both be provided or both omitted")
@@ -76,6 +79,11 @@ def build_slice1_composition(
     snapshot_writer = cast(SubscriptionSnapshotWriter, snapshots)
     delivery = outbound_delivery or InMemoryOutboundDeliveryLedger()
     cooldown = resend_cooldown or InMemoryAccessResendCooldownStore()
+    enabled = (
+        access_resend_enabled
+        if access_resend_enabled is not None
+        else telegram_access_resend_enabled_from_env(os.environ.get)
+    )
     return Slice1Composition(
         bootstrap=BootstrapIdentityHandler(identity, idempotency, audit, snapshot_writer),
         get_status=GetSubscriptionStatusHandler(identity, snapshots),
@@ -90,5 +98,6 @@ def build_slice1_composition(
             issuance_service=issuance_service,
             issuance_state_lookup=issuance_state_lookup,
             cooldown=cooldown,
+            enabled=enabled,
         ),
     )

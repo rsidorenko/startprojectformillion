@@ -62,6 +62,9 @@ _CATALOG_TEXT: dict[str, str] = {
     OutboundMessageKey.RESEND_ACCESS_ACCEPTED.value: (
         "Access instructions request accepted. If safe delivery is available, instructions will be resent."
     ),
+    OutboundMessageKey.RESEND_ACCESS_NOT_ENABLED.value: (
+        "This feature is not available yet."
+    ),
     OutboundMessageKey.RESEND_ACCESS_NOT_ELIGIBLE.value: (
         "Access instructions cannot be resent for this account right now."
     ),

@@ -41,6 +41,7 @@ class OutboundMessageKey(str, Enum):
     SERVICE_UNAVAILABLE = "service_unavailable"
     SLICE1_HELP = "slice1_help"
     RESEND_ACCESS_ACCEPTED = "resend_access_accepted"
+    RESEND_ACCESS_NOT_ENABLED = "resend_access_not_enabled"
     RESEND_ACCESS_NOT_ELIGIBLE = "resend_access_not_eligible"
     RESEND_ACCESS_COOLDOWN = "resend_access_cooldown"
     RESEND_ACCESS_NOT_READY = "resend_access_not_ready"
@@ -127,6 +128,15 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
             return TelegramOutboundPlan(
                 category=OutboundPlanCategory.SUCCESS,
                 message_key=OutboundMessageKey.RESEND_ACCESS_ACCEPTED.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportAccessResendCode.NOT_ENABLED.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.RESEND_ACCESS_NOT_ENABLED.value,
                 next_action_key=None,
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,

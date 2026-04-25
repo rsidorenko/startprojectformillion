@@ -18,24 +18,30 @@ from app.shared.correlation import new_correlation_id
 class _IdentityRepo:
     def __init__(self, record: IdentityRecord | None) -> None:
         self._record = record
+        self.calls = 0
 
     async def find_by_telegram_user_id(self, telegram_user_id: int) -> IdentityRecord | None:
+        self.calls += 1
         return self._record
 
 
 class _Snapshots:
     def __init__(self, snapshot: SubscriptionSnapshot | None) -> None:
         self._snapshot = snapshot
+        self.calls = 0
 
     async def get_for_user(self, internal_user_id: str) -> SubscriptionSnapshot | None:
+        self.calls += 1
         return self._snapshot
 
 
 class _StateLookup:
     def __init__(self, state: IssuanceCurrentStateRef | None) -> None:
         self._state = state
+        self.calls = 0
 
     async def get_current_for_user(self, internal_user_id: str) -> IssuanceCurrentStateRef | None:
+        self.calls += 1
         return self._state
 
 
@@ -72,6 +78,7 @@ async def test_active_entitled_calls_issuance_resend() -> None:
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
+        enabled=True,
         now_seconds=lambda: 1000.0,
     )
     out = await h.handle(_inp(update_id=333))
@@ -94,6 +101,7 @@ async def test_non_active_entitlement_no_issuance_call(state_label: str) -> None
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
+        enabled=True,
         now_seconds=lambda: 1.0,
     )
     out = await h.handle(_inp())
@@ -112,6 +120,7 @@ async def test_unknown_user_is_safe_denial_no_issuance_call() -> None:
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
+        enabled=True,
     )
     out = await h.handle(_inp())
     assert out.outcome is TelegramAccessResendOutcome.NOT_ELIGIBLE
@@ -129,6 +138,7 @@ async def test_missing_snapshot_is_safe_denial_no_issuance_call() -> None:
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
+        enabled=True,
     )
     out = await h.handle(_inp())
     assert out.outcome is TelegramAccessResendOutcome.NOT_ELIGIBLE
@@ -146,6 +156,7 @@ async def test_cooldown_hit_blocks_issuance_call() -> None:
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
+        enabled=True,
         now_seconds=lambda: 100.0,
     )
     first = await h.handle(_inp(update_id=1))
@@ -177,6 +188,7 @@ async def test_issuance_outcomes_map_to_safe_handler_outcomes(
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=0),
+        enabled=True,
     )
     out = await h.handle(_inp())
     assert out.outcome is expected
@@ -184,3 +196,28 @@ async def test_issuance_outcomes_map_to_safe_handler_outcomes(
 
 def test_resend_idempotency_key_is_deterministic() -> None:
     assert build_telegram_resend_idempotency_key(77, 9) == "tg-resend:77:9"
+
+
+@pytest.mark.asyncio
+async def test_flag_disabled_short_circuits_before_entitlement_cooldown_and_issuance() -> None:
+    identity = _IdentityRepo(IdentityRecord(internal_user_id="u42", telegram_user_id=42))
+    snapshots = _Snapshots(SubscriptionSnapshot(internal_user_id="u42", state_label="active"))
+    state_lookup = _StateLookup(
+        IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
+    )
+    service = _ServiceSpy(IssuanceServiceResult(category=IssuanceOutcomeCategory.DELIVERY_READY))
+    h = TelegramAccessResendHandler(
+        identity=identity,
+        snapshots=snapshots,
+        issuance_service=service,  # type: ignore[arg-type]
+        issuance_state_lookup=state_lookup,
+        cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
+        enabled=False,
+        now_seconds=lambda: 100.0,
+    )
+    out = await h.handle(_inp())
+    assert out.outcome is TelegramAccessResendOutcome.NOT_ENABLED
+    assert identity.calls == 0
+    assert snapshots.calls == 0
+    assert state_lookup.calls == 0
+    assert service.calls == 0
