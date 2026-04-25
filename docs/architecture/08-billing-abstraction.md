@@ -18,6 +18,8 @@
 - UX-текстов и дизайн сообщений об оплате;
 - полного проектирования subscription state machine.
 
+**Связанные документы (будущий public ingress)**: вынесенный **security design** публичного HTTP/webhook-входа для биллинга (пока не реализуется) — [31 — Public billing webhook / HTTP ingress](31-public-billing-ingress-security.md); сам `08` по-прежнему **не** содержит схем провайдера, HTTP и кода.
+
 ---
 
 ### Связь с `01`–`07` и что фиксирует этот шаг
