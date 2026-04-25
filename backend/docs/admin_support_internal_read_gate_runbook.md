@@ -6,7 +6,49 @@
 
 This gate is **not** a substitute for **network boundary controls** on internal HTTP (private network, mTLS, sidecar identity, etc.) and **not** a replacement for production RBAC/transport policy.
 
-For a **future** optional production ADM-01 internal HTTP mount (not implemented in the repository today), see the architecture decision record: [`docs/architecture/34-adm01-internal-http-production-boundary-adr.md`](../../docs/architecture/34-adm01-internal-http-production-boundary-adr.md).
+For ADM-01 internal HTTP production boundary and deployment constraints, see the architecture decision record: [`docs/architecture/34-adm01-internal-http-production-boundary-adr.md`](../../docs/architecture/34-adm01-internal-http-production-boundary-adr.md).
+
+## ADM-01 standalone internal HTTP entrypoint
+
+Standalone ADM-01 process entrypoint:
+
+```bash
+cd backend
+python -m app.internal_admin
+```
+
+Default behavior is **disabled** unless `ADM01_INTERNAL_HTTP_ENABLE` is truthy. In disabled mode the process prints:
+
+```text
+adm01_internal_http: disabled
+```
+
+and exits with code `0`.
+
+Enabled mode requires runtime env plus ADM-01 HTTP env guards:
+
+- `DATABASE_URL=<DATABASE_URL>`
+- `BOT_TOKEN=<BOT_TOKEN>` (required when runtime config loading expects bot credentials)
+- `ADM01_INTERNAL_HTTP_ENABLE=1`
+- `ADM01_INTERNAL_HTTP_BIND_HOST=<bind-host>`
+- `ADM01_INTERNAL_HTTP_BIND_PORT=<bind-port>`
+- `ADM01_INTERNAL_HTTP_ALLOWLIST=<principal-id>,<principal-id>`
+- `ADM01_INTERNAL_HTTP_TRUST_REVERSE_PROXY=1` (when transport trust is provided by a trusted reverse proxy)
+- `ADM01_INTERNAL_HTTP_REQUIRE_MTLS=1` (when transport trust is provided by mTLS)
+- `ADM01_INTERNAL_HTTP_BIND_INSECURE_ALL_INTERFACES=1` (explicit override for `0.0.0.0` / `::`)
+
+Safety constraints:
+
+- Default bind is loopback; do not expose ADM-01 HTTP on public interfaces by default.
+- Do not use `0.0.0.0` / `::` unless explicit insecure-all-interfaces override is set and network controls are documented.
+- Allowlist is defense-in-depth and does **not** replace transport trust (private network + trusted reverse proxy and/or mTLS).
+- Do not log request bodies, provider references, DSN values, or token material.
+- Do not expose this entrypoint to the public internet; run only behind private network controls as defined in ADR 34.
+
+On enabled-mode failure, stderr categories are fixed and intentionally low-detail:
+
+- `adm01_internal_http: config_error`
+- `adm01_internal_http: failed`
 
 ## What it does / does not do
 

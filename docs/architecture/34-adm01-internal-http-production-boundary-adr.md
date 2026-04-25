@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 
-**Scope:** This document records architecture and security decisions for a *future* optional production exposure of the ADM-01 internal HTTP surface. **Implemented today:** typed env configuration and validation guards for `ADM01_INTERNAL_HTTP_*` in `backend/src/app/internal_admin/adm01_http_config.py` (`Adm01InternalHttpConfig`), with unit tests — **no** listening socket, **no** ASGI server dependency in the repository, **no** standalone listener process, and **no** production mount of ADM-01 over TCP.
+**Scope:** This document records architecture and security decisions for optional production exposure of the ADM-01 internal HTTP surface. **Implemented today:** typed env configuration and validation guards for `ADM01_INTERNAL_HTTP_*`, standalone entrypoint `python -m app.internal_admin`, bounded `uvicorn` dependency, and enabled-mode listener startup with fixed stderr categories. Deployment/network safety constraints in this ADR remain mandatory for production.
 
 ---
 
@@ -32,9 +32,9 @@
 - Supports programmatic configuration and lifecycle hooks suitable for graceful shutdown ordering.
 - **Hypercorn** was considered as an alternative (HTTP/2, different deployment profiles) but is **not** selected for the MVP standalone slice to reduce decision surface; a future ADR may revisit if HTTP/2 or specific TLS termination models require it.
 
-**Dependency note:** This ADR does **not** add packages. A future implementation PR must add a **bounded** dependency in `backend/pyproject.toml` (for example `uvicorn` with a semver-pinned compatible range). Exact version bounds are decided in that implementation PR based on compatibility with the pinned `starlette` range and Python baseline.
+**Dependency note:** `uvicorn` is now present as a bounded dependency for the standalone entrypoint implementation. Any future ASGI-server change must preserve explicit version bounds and compatibility with the pinned `starlette` range and Python baseline.
 
-**Status of implementation:** Config guards for `ADM01_INTERNAL_HTTP_*` are **implemented** (see D). A production ADM-01 **TCP listener**, **uvicorn** (or other) dependency line, and **standalone process entrypoint** are **not** implemented; this ADR remains the contract for the next **Agent** implementation slice.
+**Status of implementation:** Config guards and standalone ADM-01 internal HTTP entrypoint are implemented at `main@331e11f` (including `uvicorn` runtime dependency and `ADM01_INTERNAL_HTTP_ALLOWLIST` enforcement for enabled mode). This ADR remains the deployment/security contract for safe bind and transport trust.
 
 ---
 
@@ -146,7 +146,7 @@ When listener and process code are added, extend beyond today’s coverage. **Al
 
 ## K. Non-goals (this ADR)
 
-- Implementing a **TCP listener**, binding a port, adding **uvicorn** (or any ASGI server) to `pyproject.toml`, or production mount of ADM-01.
+- Replacing deployment/network controls with in-app allowlists or treating public internet exposure as a safe default.
 - Modifying Telegram **polling** entrypoints or the poll loop.
 - Changing **CI** workflows, application **migration** code, or the **ADM-01 JSON response schema** in this documentation-only update.
 - Exposing `provider_issuance_ref` or other secrets in any API.
@@ -172,6 +172,7 @@ When listener and process code are added, extend beyond today’s coverage. **Al
 
 ## Changelog (documentation)
 
+- **Revision (331e11f):** Recorded that standalone entrypoint `python -m app.internal_admin` and bounded `uvicorn` dependency are implemented. Added/confirmed `ADM01_INTERNAL_HTTP_ALLOWLIST` as required enabled-mode configuration and kept network/transport constraints unchanged (private network + trusted reverse proxy and/or mTLS; no public internet default).
 - **Revision (post–config guards):** Documented that `Adm01InternalHttpConfig` and env guards are **implemented** (no listener). Recorded **uvicorn** as the intended ASGI server for the future standalone process; **hypercorn** noted as non-MVP alternative. Added explicit lifecycle: migrations → dedicated pool → build Starlette app → uvicorn listen → graceful shutdown. Updated non-goals and acceptance criteria accordingly.
 - **Proposed ADR** introduced to fix production boundary, env contract, and process-model recommendation before any `ADM01_INTERNAL_HTTP_*` implementation.
 
