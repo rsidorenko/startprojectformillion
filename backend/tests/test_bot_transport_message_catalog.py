@@ -38,6 +38,35 @@ _DSN_OR_SECRETISH = re.compile(
     re.IGNORECASE,
 )
 
+# Doc 35 §G — instruction-class / secret / config / internal leak markers (lowercase needles).
+# Deliberately excludes plain English "instructions" used in coarse/redacted copy.
+_DOC35_G_FORBIDDEN_SUBSTRINGS: tuple[str, ...] = (
+    "-----begin",
+    "private key",
+    "-----end",
+    "database_url",
+    "postgres://",
+    "postgresql://",
+    "bearer ",
+    "token=",
+    "api_key",
+    "secret=",
+    "provider_issuance_ref",
+    "issue_idempotency_key",
+    "raw_provider_payload",
+    "config_payload",
+    "private_key",
+    "traceback",
+    "runtimeerror",
+    "exception:",
+)
+
+
+def _assert_no_doc35_g_instruction_class_material(text: str) -> None:
+    lowered = text.lower()
+    for needle in _DOC35_G_FORBIDDEN_SUBSTRINGS:
+        assert needle not in lowered, f"catalog text must not contain forbidden fragment {needle!r} (doc 35 §G)"
+
 
 def _plan(
     *,
@@ -271,3 +300,17 @@ def test_resend_access_catalog_strings_are_safe(message_key: str, expected_text:
     assert "issuance-ref" not in lowered
     assert "private key" not in lowered
     _assert_no_dsn_or_secretish(out.message_text)
+
+
+def test_all_catalog_messages_forbid_doc35_g_instruction_class_material() -> None:
+    """Contract: every catalog entry stays within doc 35 §G (no instruction-class delivery material)."""
+    for mk in OutboundMessageKey:
+        plan = _plan(
+            category=OutboundPlanCategory.SUCCESS,
+            message_key=mk.value,
+        )
+        text = render_telegram_outbound_plan(plan).message_text
+        _assert_no_doc35_g_instruction_class_material(text)
+        _assert_no_dsn_or_secretish(text)
+        _assert_plain_text_no_markup(text)
+    assert "instructions" in RESEND_ACCESS_ACCEPTED_TEXT.lower()
