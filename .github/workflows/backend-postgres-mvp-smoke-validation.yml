@@ -77,9 +77,8 @@ jobs:
         continue-on-error: true
         run: python scripts/check_admin_support_internal_read_gate.py
 
-      - name: Run ADM-01 internal HTTP entrypoint smoke (advisory evidence)
+      - name: Run ADM-01 internal HTTP entrypoint smoke (blocking gate)
         id: adm01_internal_http_entrypoint_smoke
-        continue-on-error: true
         run: python scripts/check_adm01_internal_http_entrypoint_smoke.py
 
       - name: Write admin support internal read gate advisory summary marker
@@ -101,7 +100,7 @@ jobs:
           summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
           PY
 
-      - name: Write ADM-01 internal HTTP entrypoint smoke advisory summary marker
+      - name: Write ADM-01 internal HTTP entrypoint smoke blocking summary marker
         if: always()
         run: |
           python - <<'PY'
@@ -114,7 +113,7 @@ jobs:
           normalized = outcome if outcome in {"success", "failure"} else "unknown"
 
           summary_lines = [
-              "adm01 internal http entrypoint smoke advisory outcome marker",
+              "adm01 internal http entrypoint smoke blocking gate outcome marker",
               f"adm01_entrypoint_smoke_outcome={normalized}",
           ]
           summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")

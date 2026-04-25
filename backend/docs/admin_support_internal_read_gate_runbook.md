@@ -77,6 +77,7 @@ python scripts/check_adm01_internal_http_entrypoint_smoke.py
 
 This smoke verifies only disabled/config-error behavior for `python -m app.internal_admin`
 and is intentionally no-listener/no-DB; it does not prove production network safety.
+In CI (`backend-postgres-mvp-smoke-validation`) it is a **blocking gate**: a failed run fails the job (still not a production network or transport guarantee).
 
 Expected stdout on success (single line):
 
@@ -96,7 +97,9 @@ On failure, the process exits non-zero and prints **exactly one fixed line** to 
 
 ## CI
 
-The gate runs as **advisory evidence** in workflow `backend-postgres-mvp-smoke-validation` (after backend dependencies install, before blocking PostgreSQL MVP smoke gates). Failures are written to the published reports artifact as `backend-admin-support-internal-read-gate-summary.txt` (`internal_read_gate_outcome=success|failure|unknown` only); review failures but they **do not block** the targeted smoke helper regression or the real local isolated PostgreSQL MVP smoke gates.
+In workflow `backend-postgres-mvp-smoke-validation` (after backend dependencies install, before blocking PostgreSQL MVP smoke gates): the **admin support internal read gate** still runs as **advisory evidence**; failures are written to `backend-admin-support-internal-read-gate-summary.txt` (`internal_read_gate_outcome=success|failure|unknown` only) and **do not block** the smoke helper regression or the real local isolated PostgreSQL MVP smoke gates.
+
+The **ADM-01 internal HTTP entrypoint smoke** (`check_adm01_internal_http_entrypoint_smoke.py`) runs as a **blocking gate** on the same job; outcome is recorded in `backend-adm01-internal-http-entrypoint-smoke-summary.txt` (`adm01_entrypoint_smoke_outcome=success|failure|unknown`). A failure **blocks** the job (artifact upload still runs on `always()` steps where configured).
 
 ## Current delivery checkpoint
 

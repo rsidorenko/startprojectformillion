@@ -1,4 +1,4 @@
-"""Advisory operator smoke for ``python -m app.internal_admin`` (disabled/config-error only).
+"""Operator smoke for ``python -m app.internal_admin`` (disabled/config-error only; CI blocking gate).
 
 Runs safe subprocess checks with no listener startup and no DB writes. Stdout is a single fixed
 line on success; stderr uses fixed lines on expected/ unexpected failures.
