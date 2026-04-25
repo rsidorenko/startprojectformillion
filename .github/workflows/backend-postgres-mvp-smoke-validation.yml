@@ -15,9 +15,11 @@ on:
       - "backend/scripts/check_admin_support_internal_read_gate.py"
       - "backend/scripts/check_adm01_postgres_issuance_composition.py"
       - "backend/scripts/check_adm01_internal_http_entrypoint_smoke.py"
+      - "backend/scripts/check_issuance_operator_entrypoint_smoke.py"
       - "backend/scripts/check_operator_billing_ingest_apply_e2e.py"
       - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
+      - "backend/docs/issuance_operator_runbook.md"
       - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
       - "backend/docs/slice1_retention_dry_run_runbook.md"
       - "backend/docs/slice1_retention_scheduled_runbook.md"
@@ -39,9 +41,11 @@ on:
       - "backend/scripts/check_admin_support_internal_read_gate.py"
       - "backend/scripts/check_adm01_postgres_issuance_composition.py"
       - "backend/scripts/check_adm01_internal_http_entrypoint_smoke.py"
+      - "backend/scripts/check_issuance_operator_entrypoint_smoke.py"
       - "backend/scripts/check_operator_billing_ingest_apply_e2e.py"
       - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
+      - "backend/docs/issuance_operator_runbook.md"
       - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
       - "backend/docs/slice1_retention_dry_run_runbook.md"
       - "backend/docs/slice1_retention_scheduled_runbook.md"
@@ -83,6 +87,10 @@ jobs:
         id: adm01_internal_http_entrypoint_smoke
         run: python scripts/check_adm01_internal_http_entrypoint_smoke.py
 
+      - name: Run issuance operator entrypoint smoke (blocking gate)
+        id: issuance_operator_entrypoint_smoke
+        run: python scripts/check_issuance_operator_entrypoint_smoke.py
+
       - name: Write admin support internal read gate advisory summary marker
         if: always()
         run: |
@@ -117,6 +125,25 @@ jobs:
           summary_lines = [
               "adm01 internal http entrypoint smoke blocking gate outcome marker",
               f"adm01_entrypoint_smoke_outcome={normalized}",
+          ]
+          summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Write issuance operator entrypoint smoke blocking summary marker
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          report_dir = Path(os.environ["REPORT_DIR"])
+          summary_path = report_dir / "backend-issuance-operator-entrypoint-smoke-summary.txt"
+          outcome = "${{ steps.issuance_operator_entrypoint_smoke.outcome }}"
+          normalized = outcome if outcome in {"success", "failure"} else "unknown"
+
+          summary_lines = [
+              "issuance operator entrypoint smoke blocking gate outcome marker",
+              f"issuance_operator_entrypoint_smoke_outcome={normalized}",
           ]
           summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
           PY

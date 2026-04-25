@@ -10,6 +10,13 @@ Operator entrypoint for config issuance actions (`issue`, `resend`, `revoke`) us
 - Fails closed on missing/invalid configuration.
 - Output is fixed and redacted; no DSN, secret token, raw payload, or full delivery instructions.
 
+## CI smoke gate
+
+- Workflow `backend-postgres-mvp-smoke-validation` includes `python scripts/check_issuance_operator_entrypoint_smoke.py` as a **blocking** gate.
+- The smoke checks disabled/config-error fail-closed paths only; it intentionally runs without `DATABASE_URL` and without `BOT_TOKEN`.
+- The smoke does not require DB connectivity, does not call real providers, and does not introduce network dependency.
+- CI writes marker `backend-issuance-operator-entrypoint-smoke-summary.txt` with `issuance_operator_entrypoint_smoke_outcome=<success|failure|unknown>`.
+
 ## Required environment
 
 - `ISSUANCE_OPERATOR_ENABLE`: opt-in flag (`1`, `true`, `yes`).
