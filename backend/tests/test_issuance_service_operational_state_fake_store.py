@@ -1,8 +1,7 @@
 """
 IssuanceService + optional operational state port (in-memory fake store).
 
-RESEND remains process-local only: ``test_resend_not_hydrated_from_durable_store`` documents
-that a second service instance does not see durable ISSUE for resend without in-memory ledger.
+RESEND eligibility hydrates from durable state; resend call-dedup remains process-local.
 """
 
 from __future__ import annotations
@@ -279,8 +278,8 @@ async def test_revoke_idempotent_when_store_already_revoked() -> None:
 
 
 @pytest.mark.asyncio
-async def test_resend_not_hydrated_from_durable_store_process_local_resend_slice() -> None:
-    """Durable ISSUE does not populate process-local ledger for a new IssuanceService instance."""
+async def test_resend_hydrates_from_durable_store_delivery_ready() -> None:
+    """Durable ISSUE hydrates RESEND eligibility for a new IssuanceService instance."""
     p = FakeIssuanceProvider(FakeProviderMode.SUCCESS)
     st = FakeIssuanceOperationalState()
     svc1 = IssuanceService(p, operational_state=st)
@@ -298,5 +297,89 @@ async def test_resend_not_hydrated_from_durable_store_process_local_resend_slice
             link=ikey,
         )
     )
-    assert r.category is IssuanceOutcomeCategory.UNSAFE_TO_DELIVER
+    assert r.category is IssuanceOutcomeCategory.DELIVERY_READY
+    assert p2.get_safe_delivery_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_resend_hydrates_revoked_from_store() -> None:
+    st = FakeIssuanceOperationalState()
+    ikey = "ik-resend-revoked"
+    ref = "issuance-ref:fake:revoked-preseed"
+    now = datetime.now(timezone.utc)
+    st.rows[("user-1", ikey)] = IssuanceStateRow(
+        internal_user_id="user-1",
+        issue_idempotency_key=ikey,
+        state=IssuanceStatePersistence.REVOKED,
+        provider_issuance_ref=ref,
+        created_at=now,
+        updated_at=now,
+        revoked_at=now,
+    )
+    p2 = FakeIssuanceProvider(FakeProviderMode.SUCCESS)
+    svc2 = IssuanceService(p2, operational_state=st)
+    r = await svc2.execute(
+        _req(
+            op=IssuanceOperationType.RESEND,
+            sub=SubscriptionSnapshotState.ACTIVE,
+            idem="rs-revoked",
+            link=ikey,
+        )
+    )
+    assert r.category is IssuanceOutcomeCategory.REVOKED
+    assert p2.get_safe_delivery_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_resend_cache_remains_process_local() -> None:
+    """Durable RESEND call-dedup is out of scope; each process has its own resend cache."""
+    st = FakeIssuanceOperationalState()
+    ikey = "ik-resend-process-local"
+    ref = "issuance-ref:fake:process-local"
+    st.rows[("user-1", ikey)] = _now_row(
+        uid="user-1",
+        ikey=ikey,
+        ref=ref,
+        state=IssuanceStatePersistence.ISSUED,
+    )
+    p1 = FakeIssuanceProvider(FakeProviderMode.SUCCESS)
+    p2 = FakeIssuanceProvider(FakeProviderMode.SUCCESS)
+    svc1 = IssuanceService(p1, operational_state=st)
+    svc2 = IssuanceService(p2, operational_state=st)
+    req = _req(
+        op=IssuanceOperationType.RESEND,
+        sub=SubscriptionSnapshotState.ACTIVE,
+        idem="rs-shared-idem",
+        link=ikey,
+    )
+    r1 = await svc1.execute(req)
+    r2 = await svc2.execute(req)
+    assert r1.category is IssuanceOutcomeCategory.DELIVERY_READY
+    assert r2.category is IssuanceOutcomeCategory.DELIVERY_READY
+    assert p1.get_safe_delivery_calls == 1
+    assert p2.get_safe_delivery_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_resend_persist_failure_fail_closed() -> None:
+    st = FakeIssuanceOperationalState()
+    ikey = "ik-resend-fail-fetch"
+    st.rows[("user-1", ikey)] = _now_row(
+        uid="user-1",
+        ikey=ikey,
+        ref="issuance-ref:fake:persist-fail",
+        state=IssuanceStatePersistence.ISSUED,
+    )
+    st.fail_on_fetch = True
+    p2 = FakeIssuanceProvider(FakeProviderMode.SUCCESS)
+    svc2 = IssuanceService(p2, operational_state=st)
+    r = await svc2.execute(
+        _req(
+            op=IssuanceOperationType.RESEND,
+            sub=SubscriptionSnapshotState.ACTIVE,
+            idem="rs-fail",
+            link=ikey,
+        )
+    )
+    assert r.category is IssuanceOutcomeCategory.INTERNAL_ERROR
     assert p2.get_safe_delivery_calls == 0

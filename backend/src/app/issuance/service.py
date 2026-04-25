@@ -6,9 +6,10 @@ Process-local idempotency and audit always apply. Optionally, an
 :class:`~app.persistence.postgres_issuance_state.PostgresIssuanceStateRepository`)
 persists ISSUE / REVOKE operational state across process restarts.
 
-RESEND idempotency (``_resend_cached``) and resend ledger reads remain **process-local
-only** in this slice; a new process after a durable ISSUE does not load issuance into
-memory for RESEND — durable RESEND is a future sub-slice (see design doc 33).
+RESEND eligibility hydrates from durable operational state when available.
+RESEND call-dedup (``_resend_cached``) remains **process-local only** by design;
+durable cross-process resend call-dedup requires a separate schema/slice
+(see design doc 33).
 """
 
 from __future__ import annotations
@@ -57,7 +58,8 @@ class IssuanceService:
     Idempotency and category-only audit.
 
     When ``operational_state`` is set, successful ISSUE and REVOKE outcomes are reflected
-    at rest (via the port). RESEND remains in-process only (no durable resend cache).
+    at rest (via the port), and RESEND eligibility can hydrate from durable state.
+    RESEND call-dedup remains in-process only (no durable resend cache).
     """
 
     def __init__(
@@ -235,12 +237,27 @@ class IssuanceService:
         u = request.internal_user_id
         assert request.link_issue_idempotency_key is not None
         link = request.link_issue_idempotency_key
+        lk = _issuance_ledger_key(u, link)
 
         if not subscription_allows_issue_resend(request.subscription_state):
             cat = issue_resend_denial_category(request.subscription_state)
             return self._ok(request, IssuanceServiceResult(category=cat, safe_ref=None))
 
         le = self._get_ledger(u, link)
+        store = self._operational_state
+        if le is None and store is not None:
+            try:
+                row = await store.fetch_by_issue_keys(internal_user_id=u, issue_idempotency_key=link)
+            except (PersistenceDependencyError, ValueError):
+                return self._persist_fail(request)
+            if row is not None:
+                if row.state is IssuanceStatePersistence.REVOKED:
+                    self._sync_revoked_memory(lk, row.provider_issuance_ref)
+                    return self._ok(
+                        request,
+                        IssuanceServiceResult(category=IssuanceOutcomeCategory.REVOKED, safe_ref=None),
+                    )
+                le = _LedgerEntry(issuance_ref=row.provider_issuance_ref, state=_LedgerState.ISSUED)
         if le is None:
             return self._ok(
                 request, IssuanceServiceResult(category=IssuanceOutcomeCategory.UNSAFE_TO_DELIVER)

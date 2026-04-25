@@ -228,3 +228,47 @@ def test_postgres_issuance_service_idempotent_issue_does_not_overwrite_ref(pg_ur
             await pool.close()
 
     asyncio.run(main())
+
+
+def test_postgres_issuance_service_resend_second_instance_after_issue_first(pg_url: str) -> None:
+    uid = f"{_KEY_PREFIX}u-resend-cross"
+    ikey = f"{_KEY_PREFIX}ik-resend-cross"
+
+    async def main() -> None:
+        pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(_apply_011())
+            async with pool.acquire() as conn:
+                await conn.execute("DELETE FROM issuance_state WHERE internal_user_id = $1::text", uid)
+            repo = PostgresIssuanceStateRepository(pool)
+            p1 = FakeIssuanceProvider(FakeProviderMode.SUCCESS)
+            svc1 = IssuanceService(p1, operational_state=repo)
+            issued = await svc1.execute(
+                _req(
+                    internal_user_id=uid,
+                    op=IssuanceOperationType.ISSUE,
+                    sub=SubscriptionSnapshotState.ACTIVE,
+                    idem=ikey,
+                )
+            )
+            assert issued.category is IssuanceOutcomeCategory.ISSUED
+            p2 = FakeIssuanceProvider(FakeProviderMode.SUCCESS)
+            svc2 = IssuanceService(p2, operational_state=repo)
+            resend = await svc2.execute(
+                _req(
+                    internal_user_id=uid,
+                    op=IssuanceOperationType.RESEND,
+                    sub=SubscriptionSnapshotState.ACTIVE,
+                    idem="resend-cross-1",
+                    link=ikey,
+                )
+            )
+            assert resend.category is IssuanceOutcomeCategory.DELIVERY_READY
+            assert p2.get_safe_delivery_calls == 1
+            assert resend.safe_ref is not None
+            _assert_no_forbidden(resend.safe_ref)
+        finally:
+            await pool.close()
+
+    asyncio.run(main())
