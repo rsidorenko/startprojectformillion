@@ -35,3 +35,5 @@ For MVP, the only admin ingress is `internal admin endpoint`.
 
 It may be revisited after MVP as a separate boundary decision with dedicated controls and explicit risk acceptance.
 
+**Related (future production ADM-01 HTTP, not yet implemented):** [34 - ADM-01 internal HTTP production boundary ADR](34-adm01-internal-http-production-boundary-adr.md).
+

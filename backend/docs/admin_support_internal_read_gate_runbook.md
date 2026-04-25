@@ -6,6 +6,8 @@
 
 This gate is **not** a substitute for **network boundary controls** on internal HTTP (private network, mTLS, sidecar identity, etc.) and **not** a replacement for production RBAC/transport policy.
 
+For a **future** optional production ADM-01 internal HTTP mount (not implemented in the repository today), see the architecture decision record: [`docs/architecture/34-adm01-internal-http-production-boundary-adr.md`](../../docs/architecture/34-adm01-internal-http-production-boundary-adr.md).
+
 ## What it does / does not do
 
 - **No external database:** does not read `DATABASE_URL`, does not open TCP to PostgreSQL, no Docker, no migrations.
