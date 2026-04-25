@@ -509,3 +509,79 @@ def test_postgres_telegram_access_resend_revoked_issuance_state_not_ready(
             await pool.close()
 
     asyncio.run(main())
+
+
+def test_postgres_telegram_access_resend_inactive_subscription_not_eligible(
+    pg_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    telegram_user_id = 913004
+    internal_user_id = f"{_KEY_PREFIX}u-access-resend-inactive"
+    issue_idem = f"{_KEY_PREFIX}issue-access-resend-inactive"
+
+    async def main() -> None:
+        pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=2)
+        try:
+            await _apply_all_migrations(pool)
+            async with pool.acquire() as conn:
+                await conn.execute("DELETE FROM issuance_state WHERE internal_user_id = $1::text", internal_user_id)
+                await conn.execute("DELETE FROM subscription_snapshots WHERE internal_user_id = $1::text", internal_user_id)
+                await conn.execute("DELETE FROM user_identities WHERE telegram_user_id = $1::bigint", telegram_user_id)
+
+            identity_repo = PostgresUserIdentityRepository(pool)
+            await identity_repo.create_if_absent(telegram_user_id)
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE user_identities
+                    SET internal_user_id = $2::text
+                    WHERE telegram_user_id = $1::bigint
+                    """,
+                    telegram_user_id,
+                    internal_user_id,
+                )
+            snapshots_repo = PostgresSubscriptionSnapshotReader(pool)
+            await snapshots_repo.upsert_state(
+                SubscriptionSnapshot(
+                    internal_user_id=internal_user_id,
+                    state_label=SubscriptionSnapshotState.INACTIVE.value,
+                )
+            )
+            issuance_repo = PostgresIssuanceStateRepository(pool)
+            await issuance_repo.issue_or_get(
+                internal_user_id=internal_user_id,
+                issue_idempotency_key=issue_idem,
+                provider_issuance_ref=f"issuance-ref:fake:{_KEY_PREFIX}resend-inactive-gate",
+            )
+
+            monkeypatch.setenv("SLICE1_USE_POSTGRES_REPOS", "1")
+            monkeypatch.setenv("TELEGRAM_ACCESS_RESEND_ENABLE", "1")
+            cfg = RuntimeConfig(
+                bot_token="1234567890tok",
+                database_url=pg_url,
+                app_env="development",
+                debug_safe=False,
+            )
+
+            async def _reuse_pool(_dsn: str) -> asyncpg.Pool:
+                return pool
+
+            composition, maybe_pool = await resolve_slice1_composition_for_runtime(
+                cfg,
+                open_pool=_reuse_pool,
+            )
+            assert maybe_pool is pool
+            result = await composition.access_resend.handle(
+                TelegramAccessResendInput(
+                    telegram_user_id=telegram_user_id,
+                    telegram_update_id=504,
+                    correlation_id=new_correlation_id(),
+                )
+            )
+            assert result.outcome is TelegramAccessResendOutcome.NOT_ELIGIBLE
+            assert result.resend_idempotency_key is None
+            _assert_no_forbidden(f"{result}")
+        finally:
+            await pool.close()
+
+    asyncio.run(main())
