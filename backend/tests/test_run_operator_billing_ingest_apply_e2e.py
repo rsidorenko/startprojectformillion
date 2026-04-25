@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-
 import pytest
+
+from app.application.apply_billing_subscription import ApplyAcceptedBillingFactResult
+from app.persistence.billing_subscription_apply_contracts import BillingSubscriptionApplyOutcome
+from app.shared.types import OperationOutcomeCategory
 
 _SCRIPT_PATH = (
     Path(__file__).resolve().parents[1]
@@ -152,6 +155,148 @@ async def test_cleanup_called_on_partial_failure(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(RuntimeError):
         await script.run_operator_billing_ingest_apply_e2e()
+    assert calls.count("cleanup") == 2
+    assert calls[-1] == "pool.close"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_called_on_partial_failure_after_second_ingest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = _load_script_module()
+    calls: list[str] = []
+    ids = script._new_synthetic_ids()
+    ingest_n = {"n": 0}
+
+    class _ConnCtx:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Pool:
+        def acquire(self):
+            return _ConnCtx()
+
+        async def close(self) -> None:
+            calls.append("pool.close")
+
+    async def fake_cleanup(_conn, ids_obj) -> None:
+        assert ids_obj.uid.startswith("operator-e2e-")
+        calls.append("cleanup")
+
+    async def fake_create_pool(*args, **kwargs):
+        _ = (args, kwargs)
+        return _Pool()
+
+    async def fake_apply_migrations(*args, **kwargs) -> None:
+        _ = (args, kwargs)
+        return None
+
+    async def ingest_twice_then_fail(input_, *, dsn):
+        _ = dsn
+        ingest_n["n"] += 1
+        if ingest_n["n"] == 1:
+            return ("accepted", ids.fact_ref, "accepted", "c1")
+        if ingest_n["n"] == 2:
+            raise RuntimeError("forced second ingest failure")
+        raise AssertionError("unexpected third ingest")
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://local/dev")
+    monkeypatch.setattr(script.asyncpg, "create_pool", fake_create_pool)
+    monkeypatch.setattr(script, "apply_postgres_migrations", fake_apply_migrations)
+    monkeypatch.setattr(script, "_cleanup_synthetic_rows", fake_cleanup)
+    monkeypatch.setattr(script, "_new_synthetic_ids", lambda: ids)
+    monkeypatch.setattr(script, "async_run_billing_ingest_from_parsed", ingest_twice_then_fail)
+
+    with pytest.raises(RuntimeError):
+        await script.run_operator_billing_ingest_apply_e2e()
+    assert ingest_n["n"] == 2
+    assert calls.count("cleanup") == 2
+    assert calls[-1] == "pool.close"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_ingest_invokes_ingest_twice_same_parsed_then_applies_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = _load_script_module()
+    calls: list[str] = []
+    ids = script._new_synthetic_ids()
+    ingest_inputs: list[object] = []
+    apply_refs: list[str] = []
+
+    class _ConnCtx:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Pool:
+        def acquire(self):
+            return _ConnCtx()
+
+        async def close(self) -> None:
+            calls.append("pool.close")
+
+    async def fake_cleanup(_conn, ids_obj) -> None:
+        _ = ids_obj
+        calls.append("cleanup")
+
+    async def fake_create_pool(*args, **kwargs):
+        _ = (args, kwargs)
+        return _Pool()
+
+    async def fake_apply_migrations(*args, **kwargs) -> None:
+        _ = (args, kwargs)
+        return None
+
+    async def fake_ingest(input_, *, dsn):
+        _ = dsn
+        ingest_inputs.append(input_)
+        n = len(ingest_inputs)
+        if n == 1:
+            return ("accepted", ids.fact_ref, "accepted", "c1")
+        if n == 2:
+            return ("idempotent_replay", ids.fact_ref, "accepted", "c2")
+        raise AssertionError("unexpected extra ingest")
+
+    async def fake_apply(ref: str, *, dsn: str):
+        _ = dsn
+        apply_refs.append(ref)
+        if len(apply_refs) == 1:
+            return ApplyAcceptedBillingFactResult(
+                operation_outcome=OperationOutcomeCategory.SUCCESS,
+                idempotent_replay=False,
+                apply_outcome=BillingSubscriptionApplyOutcome.ACTIVE_APPLIED,
+            )
+        if len(apply_refs) == 2:
+            return ApplyAcceptedBillingFactResult(
+                operation_outcome=OperationOutcomeCategory.IDEMPOTENT_NOOP,
+                idempotent_replay=True,
+                apply_outcome=BillingSubscriptionApplyOutcome.ACTIVE_APPLIED,
+            )
+        raise AssertionError("unexpected extra apply")
+
+    async def fake_assert_active(pool, *, internal_user_id: str) -> None:
+        _ = (pool, internal_user_id)
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://local/dev")
+    monkeypatch.setattr(script.asyncpg, "create_pool", fake_create_pool)
+    monkeypatch.setattr(script, "apply_postgres_migrations", fake_apply_migrations)
+    monkeypatch.setattr(script, "_cleanup_synthetic_rows", fake_cleanup)
+    monkeypatch.setattr(script, "_new_synthetic_ids", lambda: ids)
+    monkeypatch.setattr(script, "async_run_billing_ingest_from_parsed", fake_ingest)
+    monkeypatch.setattr(script, "async_run_apply", fake_apply)
+    monkeypatch.setattr(script, "_assert_subscription_active", fake_assert_active)
+
+    await script.run_operator_billing_ingest_apply_e2e()
+
+    assert len(ingest_inputs) == 2
+    assert ingest_inputs[0] is ingest_inputs[1]
+    assert apply_refs == [ids.fact_ref, ids.fact_ref]
     assert calls.count("cleanup") == 2
     assert calls[-1] == "pool.close"
 

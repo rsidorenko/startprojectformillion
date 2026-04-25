@@ -114,7 +114,7 @@ On failure, stderr: `billing_subscription_apply: failed category=...` (e.g. `not
 
 ## Automated operator e2e smoke
 
-Use the bounded smoke helper to validate ingest -> apply -> readiness with synthetic data only:
+Use the bounded smoke helper to validate ingest -> **duplicate ingest (idempotent replay)** -> apply -> second apply idempotency -> readiness with synthetic data only. Public billing HTTP ingress remains blocked by [ADR-32 §N](../../docs/architecture/32-public-billing-ingress-decisions-adr.md#n-production-implementation-decision-checklist).
 
 ```bash
 python scripts/check_operator_billing_ingest_apply_e2e.py
@@ -138,7 +138,7 @@ Safety guarantees:
 
 - Uses synthetic IDs only with `operator-e2e-` prefix.
 - Cleans up only exact synthetic rows created by this script instance.
-- Does not open a public webhook surface.
+- Exercises duplicate normalized ingest replay (`idempotent_replay`) before apply; does not open a public webhook surface.
 - Does not invoke Telegram runtime/polling behavior.
 - Does not use or require a real issuance provider.
 - Do not print or copy production DSN/tokens into logs or docs.

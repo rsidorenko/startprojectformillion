@@ -1,4 +1,4 @@
-"""Operator e2e smoke: normalized ingest -> UC-05 apply -> readiness check."""
+"""Operator e2e smoke: normalized ingest (duplicate replay) -> UC-05 apply -> readiness check."""
 
 from __future__ import annotations
 
@@ -141,11 +141,17 @@ async def run_operator_billing_ingest_apply_e2e() -> None:
             await _cleanup_synthetic_rows(conn, ids)
 
         parsed = parse_json_to_normalized_billing_input(_normalized_fact_json(ids))
-        ingest_outcome, ingest_ref, _status, _corr = await async_run_billing_ingest_from_parsed(parsed, dsn=dsn)
-        if ingest_ref != ids.fact_ref:
+        ingest_outcome_1, ingest_ref_1, _, _ = await async_run_billing_ingest_from_parsed(parsed, dsn=dsn)
+        if ingest_ref_1 != ids.fact_ref:
             raise RuntimeError("ingest returned mismatched internal_fact_ref")
-        if ingest_outcome not in ("accepted", "idempotent_replay"):
-            raise RuntimeError("ingest outcome is not accepted or idempotent_replay")
+        if ingest_outcome_1 != "accepted":
+            raise RuntimeError("first ingest must accept fresh synthetic fact")
+
+        ingest_outcome_2, ingest_ref_2, _, _ = await async_run_billing_ingest_from_parsed(parsed, dsn=dsn)
+        if ingest_ref_2 != ids.fact_ref:
+            raise RuntimeError("second ingest returned mismatched internal_fact_ref")
+        if ingest_outcome_2 != "idempotent_replay":
+            raise RuntimeError("second ingest must be idempotent_replay for duplicate normalized fact")
 
         apply_res = await async_run_apply(ids.fact_ref, dsn=dsn)
         if apply_res.operation_outcome not in (
