@@ -358,3 +358,90 @@ def test_adm02_endpoint_contract_locked_boundary_and_no_unexpected_fragments() -
                 assert forbidden not in encoded_non_success
 
     _run(main())
+
+
+def test_adm02_endpoint_success_leak_guard_sensitive_internal_strings_do_not_cross_boundary() -> None:
+    cid = new_correlation_id()
+    sensitive_markers = (
+        "external_event_id",
+        "provider_issuance_ref",
+        "issue_idempotency_key",
+        "DATABASE_URL",
+        "postgres://",
+        "postgresql://",
+        "Bearer ",
+        "PRIVATE KEY",
+        "raw_provider_payload",
+    )
+    summary = Adm02DiagnosticsSummary(
+        billing=Adm02BillingFactsDiagnostics(
+            category=Adm02BillingFactsCategory.HAS_ACCEPTED,
+            internal_fact_refs=("opaque-fact-1", "opaque-fact-2"),
+        ),
+        quarantine=Adm02QuarantineDiagnostics(
+            marker=Adm02QuarantineMarker.ACTIVE,
+            reason_code=Adm02QuarantineReasonCode.NEEDS_REVIEW,
+        ),
+        reconciliation=Adm02ReconciliationDiagnostics(
+            last_run_marker=Adm02ReconciliationRunMarker.FACTS_DISCOVERED,
+        ),
+        redaction=RedactionMarker.PARTIAL,
+    )
+
+    async def main() -> None:
+        h = _RecordingHandler(_diag_result(Adm02DiagnosticsOutcome.SUCCESS, cid, summary=summary))
+        response = await execute_adm02_endpoint(
+            h,
+            _SuccessExtractor(),
+            _req(cid=cid, internal_user_id="u-guard"),
+        )
+        encoded = json.dumps(asdict(response), sort_keys=True)
+        encoded_lower = encoded.lower()
+        assert response.outcome == Adm02DiagnosticsOutcome.SUCCESS.value
+        assert response.summary is not None
+        assert response.summary.internal_fact_refs == ("opaque-fact-1", "opaque-fact-2")
+        assert "internal_fact_refs" in encoded_lower
+        for fragment in sensitive_markers:
+            assert fragment.lower() not in encoded_lower
+
+    _run(main())
+
+
+def test_adm02_endpoint_handler_exception_leak_guard_dependency_failure_safe_repr() -> None:
+    cid = new_correlation_id()
+    sensitive_error = (
+        "traceback RuntimeError external_event_id provider_issuance_ref "
+        "issue_idempotency_key DATABASE_URL postgres:// postgresql:// "
+        "Bearer PRIVATE KEY raw_provider_payload"
+    )
+
+    class _SensitiveExplodingHandler:
+        async def handle(self, inp: Adm02DiagnosticsInput) -> Adm02DiagnosticsResult:
+            raise RuntimeError(sensitive_error)
+
+    async def main() -> None:
+        response = await execute_adm02_endpoint(
+            _SensitiveExplodingHandler(),
+            _SuccessExtractor(),
+            _req(cid=cid, internal_user_id="u-guard"),
+        )
+        encoded_lower = json.dumps(asdict(response), sort_keys=True).lower()
+        assert response.outcome == Adm02DiagnosticsOutcome.DEPENDENCY_FAILURE.value
+        assert response.correlation_id == cid
+        assert response.summary is None
+        for forbidden in (
+            "traceback",
+            "runtimeerror",
+            "external_event_id",
+            "provider_issuance_ref",
+            "issue_idempotency_key",
+            "database_url",
+            "postgres://",
+            "postgresql://",
+            "bearer ",
+            "private key",
+            "raw_provider_payload",
+        ):
+            assert forbidden not in encoded_lower
+
+    _run(main())
