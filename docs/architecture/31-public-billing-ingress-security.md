@@ -4,6 +4,8 @@
 
 **Proposed** — design-only. This document does **not** implement any HTTP server, provider parser, signature verification, migrations, or runtime changes to today’s operator ingest / UC-05 apply path.
 
+**Related decision record (product/security gate before implementation):** [32 — Public billing ingress decisions ADR](32-public-billing-ingress-decisions-adr.md) — selection criteria, authenticity baseline, TBD numeric limits, rotation, evidence, ingest vs auto-apply.
+
 ### Context
 
 - **Today**, the system ingests **normalized** billing facts only through **operator** entry points (`IngestNormalizedBillingFactHandler` / `billing_ingestion_main` with pre-built JSON; see [UC-04](../../backend/src/app/application/billing_ingestion.py) and the end-to-end runbook [operator ingest → apply](../../backend/docs/billing_operator_ingest_apply_runbook.md)). UC-05 subscription apply is a **separate** step (`billing_subscription_apply_main`); it is not automatically chained in application code.
@@ -152,6 +154,7 @@ When a team implements the public ingress in a follow-up, that slice should be r
 
 ### References (architecture)
 
+- [32 — Public billing ingress decisions ADR](32-public-billing-ingress-decisions-adr.md)  
 - [01 — System boundaries](01-system-boundaries.md)  
 - [08 — Billing abstraction](08-billing-abstraction.md)  
 - [09 — Subscription lifecycle](09-subscription-lifecycle.md)  
