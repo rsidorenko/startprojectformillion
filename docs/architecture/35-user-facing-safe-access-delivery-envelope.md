@@ -102,6 +102,8 @@ Structured logs and metrics remain governed by [12 — Observability boundary](1
 
 ### I. Open questions (preserved)
 
+Structured **provider / storage / delivery-material** policy (criteria and checklist; does not select a vendor or enable Telegram `instruction`): [36 — Access / config provider selection and storage / delivery material policy](36-access-config-provider-and-storage-policy.md).
+
 Deferred to product / security / implementation follow-up (non-exhaustive; overlaps [33 §L](33-config-issuance-v1-design.md#l-open-questions-product--security--implementation-follow-up)):
 
 - Real access/config **provider** and deployment model.

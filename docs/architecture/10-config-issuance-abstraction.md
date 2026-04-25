@@ -370,6 +370,7 @@ Issuance abstraction **запрещено**:
 
 ### Open questions
 
+- Политика выбора **real** access/config **провайдера** и требования к **хранению / классам delivery material** (без выбора вендора, без SQL/SDK): [36 — Access / config provider selection and storage / delivery material policy](36-access-config-provider-and-storage-policy.md).
 - **(resolved — см. подраздел «Граница чувствительности: `delivery instruction` vs sensitive delivery material»)** Нормализованная **`delivery instruction`** по определению не-секретная и user-safe; одноразовый/чувствительный материал доставки — отдельный класс на границе абстракции с boundary-правилами там же (не подмена `delivery instruction`, не смешение с CAP-I06).
 - Нужна ли в MVP явная политика **максимального срока жизни** выдачи независимо от подписки (ключ rotation), или достаточно lifecycle-driven revoke?
 - Как строго разделять **unknown** vs **failed** при частичных ответах провайдера (единая таксономия ошибок)?

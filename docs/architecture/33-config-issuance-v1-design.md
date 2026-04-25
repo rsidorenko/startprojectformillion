@@ -158,6 +158,8 @@ Normalized **categories** (for logs/metrics/audit/structured handling); **not** 
 
 ### L. Open questions (product / security / implementation follow-up)
 
+**Policy checklist (provider criteria, storage tiers, delivery taxonomy; no vendor selected):** [36 — Access / config provider selection and storage / delivery material policy](36-access-config-provider-and-storage-policy.md).
+
 - **Access / config provider** choice and deployment model.
 - **Storage** model for opaque references vs any held sensitive material; encryption-at-rest and key management if ever required.
 - **Delivery channel** and **message** content; UX for “unknown” and “degraded” issuer.
