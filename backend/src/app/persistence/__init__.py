@@ -49,6 +49,8 @@ from app.persistence.billing_ingestion_audit_contracts import (
 from app.persistence.billing_events_ledger_in_memory import InMemoryBillingEventsLedgerRepository
 from app.persistence.postgres_billing_events_ledger import PostgresBillingEventsLedgerRepository
 from app.persistence.postgres_billing_ingestion_audit import PostgresBillingIngestionAuditAppender
+from app.persistence.issuance_state_record import IssuanceStatePersistence, IssuanceStateRow
+from app.persistence.postgres_issuance_state import PostgresIssuanceStateRepository
 from app.persistence.mismatch_quarantine_in_memory import InMemoryMismatchQuarantineRepository
 from app.persistence.reconciliation_runs_in_memory import InMemoryReconciliationRunsRepository
 
@@ -93,6 +95,9 @@ __all__ = [
     "BillingIngestionAuditAppender",
     "InMemoryBillingIngestionAuditAppender",
     "PostgresBillingIngestionAuditAppender",
+    "PostgresIssuanceStateRepository",
+    "IssuanceStateRow",
+    "IssuanceStatePersistence",
     "InMemoryBillingEventsLedgerRepository",
     "InMemoryMismatchQuarantineRepository",
     "InMemoryReconciliationRunsRepository",

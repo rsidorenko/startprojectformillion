@@ -48,6 +48,7 @@ def test_sorted_migration_sql_paths_repo_migrations_order() -> None:
         "008_billing_events_ledger.sql",
         "009_billing_ingestion_audit_events.sql",
         "010_billing_subscription_apply.sql",
+        "011_issuance_state.sql",
     ]
 
 
