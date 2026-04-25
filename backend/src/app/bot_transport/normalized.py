@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from enum import Enum
 
 from app.application.handlers import BootstrapIdentityInput, GetSubscriptionStatusInput
-from app.application.telegram_access_resend import TelegramAccessResendInput
+from app.application.telegram_access_resend import (
+    TelegramAccessResendInput,
+    TelegramAccessResendSourceCommand,
+)
 from app.security.validation import (
     ValidationError,
     validate_telegram_update_id,
@@ -153,11 +156,17 @@ def parse_slice1_transport(envelope: TransportIncomingEnvelope) -> NormalizedSli
             validate_telegram_update_id(envelope.telegram_update_id)
         except ValidationError:
             return NormalizedSlice1Rejected(reason=NormalizationRejectReason.INVALID_INPUT)
+        source_command = (
+            TelegramAccessResendSourceCommand.RESEND_ACCESS
+            if token == "/resend_access"
+            else TelegramAccessResendSourceCommand.GET_ACCESS
+        )
         return NormalizedSlice1ResendAccess(
             input=TelegramAccessResendInput(
                 telegram_user_id=envelope.telegram_user_id,
                 telegram_update_id=envelope.telegram_update_id,
                 correlation_id=envelope.correlation_id,
+                source_command=source_command,
             ),
         )
 

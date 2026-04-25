@@ -10,6 +10,7 @@ from app.application.telegram_access_resend import (
     TelegramAccessResendHandler,
     TelegramAccessResendInput,
     TelegramAccessResendOutcome,
+    TelegramAccessResendSourceCommand,
     build_telegram_resend_idempotency_key,
 )
 from app.issuance.contracts import IssuanceOutcomeCategory, IssuanceServiceResult
@@ -78,11 +79,15 @@ class _DisabledMarkerSpy:
         self.events.append(event)
 
 
-def _inp(update_id: int = 10) -> TelegramAccessResendInput:
+def _inp(
+    update_id: int = 10,
+    source_command: TelegramAccessResendSourceCommand | None = None,
+) -> TelegramAccessResendInput:
     return TelegramAccessResendInput(
         telegram_user_id=42,
         telegram_update_id=update_id,
         correlation_id=new_correlation_id(),
+        source_command=source_command,
     )
 
 
@@ -242,10 +247,14 @@ async def test_flag_disabled_short_circuits_before_entitlement_cooldown_and_issu
         enabled=False,
         now_seconds=lambda: 100.0,
     )
-    out = await h.handle(_inp())
+    out = await h.handle(_inp(source_command=TelegramAccessResendSourceCommand.RESEND_ACCESS))
     assert out.outcome is TelegramAccessResendOutcome.NOT_ENABLED
     assert marker.calls == 1
-    assert marker.events == [TelegramAccessResendDisabledHitEvent()]
+    assert marker.events == [
+        TelegramAccessResendDisabledHitEvent(
+            source_command=TelegramAccessResendSourceCommand.RESEND_ACCESS,
+        )
+    ]
     assert identity.calls == 0
     assert snapshots.calls == 0
     assert cooldown.calls == 0
@@ -254,9 +263,19 @@ async def test_flag_disabled_short_circuits_before_entitlement_cooldown_and_issu
 
 
 def test_disabled_hit_event_contains_only_bounded_safe_fields() -> None:
-    event = TelegramAccessResendDisabledHitEvent()
-    payload = {"operation": event.operation, "outcome": event.outcome}
-    assert payload == {"operation": "telegram_access_resend", "outcome": "not_enabled"}
+    event = TelegramAccessResendDisabledHitEvent(
+        source_command=TelegramAccessResendSourceCommand.GET_ACCESS,
+    )
+    payload = {
+        "operation": event.operation,
+        "outcome": event.outcome,
+        "source_command": event.source_command.value if event.source_command is not None else None,
+    }
+    assert payload == {
+        "operation": "telegram_access_resend",
+        "outcome": "not_enabled",
+        "source_command": "get_access",
+    }
     blob = f"{payload}".lower()
     forbidden = (
         "telegram_user_id",
@@ -273,3 +292,34 @@ def test_disabled_hit_event_contains_only_bounded_safe_fields() -> None:
     )
     for key in forbidden:
         assert key not in blob
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    (
+        (TelegramAccessResendSourceCommand.RESEND_ACCESS, "resend_access"),
+        (TelegramAccessResendSourceCommand.GET_ACCESS, "get_access"),
+    ),
+)
+async def test_disabled_marker_records_bounded_source_command(
+    source: TelegramAccessResendSourceCommand,
+    expected: str,
+) -> None:
+    marker = _DisabledMarkerSpy()
+    h = TelegramAccessResendHandler(
+        identity=_IdentityRepo(IdentityRecord(internal_user_id="u42", telegram_user_id=42)),
+        snapshots=_Snapshots(SubscriptionSnapshot(internal_user_id="u42", state_label="active")),
+        issuance_service=_ServiceSpy(IssuanceServiceResult(category=IssuanceOutcomeCategory.DELIVERY_READY)),  # type: ignore[arg-type]
+        issuance_state_lookup=_StateLookup(
+            IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False),
+        ),
+        cooldown=_CooldownSpy(allowed=True),
+        disabled_hit_marker=marker,
+        enabled=False,
+    )
+    out = await h.handle(_inp(source_command=source))
+    assert out.outcome is TelegramAccessResendOutcome.NOT_ENABLED
+    assert marker.calls == 1
+    assert marker.events[0].source_command is source
+    assert marker.events[0].source_command.value == expected

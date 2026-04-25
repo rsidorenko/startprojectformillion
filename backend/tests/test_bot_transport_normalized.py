@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import fields
 
 from app.application.handlers import BootstrapIdentityInput, GetSubscriptionStatusInput
+from app.application.telegram_access_resend import TelegramAccessResendSourceCommand
 from app.bot_transport.normalized import (
     NormalizationRejectReason,
     NormalizedSlice1Bootstrap,
@@ -118,11 +119,13 @@ def test_resend_access_maps_to_resend_input() -> None:
     assert r.input.telegram_user_id == 55
     assert r.input.telegram_update_id == 11
     assert r.input.correlation_id == cid
+    assert r.input.source_command is TelegramAccessResendSourceCommand.RESEND_ACCESS
 
 
 def test_get_access_alias_maps_to_resend_input() -> None:
     r = parse_slice1_transport(_env(cmd="/get_access", update_id=123))
     assert isinstance(r, NormalizedSlice1ResendAccess)
+    assert r.input.source_command is TelegramAccessResendSourceCommand.GET_ACCESS
 
 
 def test_unknown_command_rejected() -> None:

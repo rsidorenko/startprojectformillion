@@ -37,11 +37,17 @@ class TelegramAccessResendOutcome(str, Enum):
     TEMPORARILY_UNAVAILABLE = "temporarily_unavailable"
 
 
+class TelegramAccessResendSourceCommand(str, Enum):
+    RESEND_ACCESS = "resend_access"
+    GET_ACCESS = "get_access"
+
+
 @dataclass(frozen=True, slots=True)
 class TelegramAccessResendInput:
     telegram_user_id: int
     telegram_update_id: int
     correlation_id: str
+    source_command: TelegramAccessResendSourceCommand | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +61,7 @@ class TelegramAccessResendResult:
 class TelegramAccessResendDisabledHitEvent:
     operation: str = "telegram_access_resend"
     outcome: str = "not_enabled"
+    source_command: TelegramAccessResendSourceCommand | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +148,9 @@ class TelegramAccessResendHandler:
             )
         if not self._enabled:
             try:
-                self._disabled_hit_marker.record_disabled_hit(TelegramAccessResendDisabledHitEvent())
+                self._disabled_hit_marker.record_disabled_hit(
+                    TelegramAccessResendDisabledHitEvent(source_command=inp.source_command),
+                )
             except Exception:
                 # Telemetry marker must not change fail-closed user-visible behavior.
                 pass
