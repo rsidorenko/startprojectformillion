@@ -68,6 +68,16 @@ cd backend
 python scripts/check_admin_support_internal_read_gate.py
 ```
 
+### ADM-01 entrypoint smoke
+
+```bash
+cd backend
+python scripts/check_adm01_internal_http_entrypoint_smoke.py
+```
+
+This smoke verifies only disabled/config-error behavior for `python -m app.internal_admin`
+and is intentionally no-listener/no-DB; it does not prove production network safety.
+
 Expected stdout on success (single line):
 
 ```text

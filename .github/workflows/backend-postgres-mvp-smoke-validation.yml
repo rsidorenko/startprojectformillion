@@ -14,6 +14,7 @@ on:
       - "backend/scripts/run_slice1_retention_dry_run.py"
       - "backend/scripts/check_admin_support_internal_read_gate.py"
       - "backend/scripts/check_adm01_postgres_issuance_composition.py"
+      - "backend/scripts/check_adm01_internal_http_entrypoint_smoke.py"
       - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
       - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
@@ -36,6 +37,7 @@ on:
       - "backend/scripts/run_slice1_retention_dry_run.py"
       - "backend/scripts/check_admin_support_internal_read_gate.py"
       - "backend/scripts/check_adm01_postgres_issuance_composition.py"
+      - "backend/scripts/check_adm01_internal_http_entrypoint_smoke.py"
       - "backend/docs/admin_support_internal_read_gate_runbook.md"
       - "backend/docs/postgres_mvp_smoke_runbook.md"
       - "backend/docs/slice1_retention_manual_cleanup_runbook.md"
@@ -75,6 +77,11 @@ jobs:
         continue-on-error: true
         run: python scripts/check_admin_support_internal_read_gate.py
 
+      - name: Run ADM-01 internal HTTP entrypoint smoke (advisory evidence)
+        id: adm01_internal_http_entrypoint_smoke
+        continue-on-error: true
+        run: python scripts/check_adm01_internal_http_entrypoint_smoke.py
+
       - name: Write admin support internal read gate advisory summary marker
         if: always()
         run: |
@@ -90,6 +97,25 @@ jobs:
           summary_lines = [
               "admin support internal read gate advisory outcome marker",
               f"internal_read_gate_outcome={normalized}",
+          ]
+          summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Write ADM-01 internal HTTP entrypoint smoke advisory summary marker
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          report_dir = Path(os.environ["REPORT_DIR"])
+          summary_path = report_dir / "backend-adm01-internal-http-entrypoint-smoke-summary.txt"
+          outcome = "${{ steps.adm01_internal_http_entrypoint_smoke.outcome }}"
+          normalized = outcome if outcome in {"success", "failure"} else "unknown"
+
+          summary_lines = [
+              "adm01 internal http entrypoint smoke advisory outcome marker",
+              f"adm01_entrypoint_smoke_outcome={normalized}",
           ]
           summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
           PY
