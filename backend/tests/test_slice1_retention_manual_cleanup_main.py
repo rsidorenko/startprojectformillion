@@ -17,20 +17,12 @@ from app.persistence.slice1_retention_manual_cleanup import (
 )
 from app.persistence import slice1_retention_manual_cleanup_main as main_mod
 from app.security.config import ConfigurationError, RuntimeConfig
+from tests.retention_boundary_assertions import assert_retention_failure_output_safe
 
 
 _SYNTHETIC_DSN_SECRET = "TOP_SECRET_XYZabc123"
 _SYNTHETIC_DSN = (
     f"postgresql://user:{_SYNTHETIC_DSN_SECRET}@127.0.0.1:5432/slice1_retention_testdb"
-)
-_SECRET_NEEDLES = (
-    "postgres://",
-    "postgresql://",
-    "Bearer ",
-    "PRIVATE KEY",
-    "TOP_SECRET",
-    "SECRET",
-    "TOKEN",
 )
 
 
@@ -253,17 +245,16 @@ async def test_run_slice1_retention_cleanup_from_env_cleanup_failure_closes_pool
 
     err_text = str(excinfo.value)
     assert _classify_retention_boundary_exception_for_tests(excinfo.value) == "unexpected_error"
-    assert _SYNTHETIC_DSN_SECRET not in err_text
-    assert "postgresql://" not in err_text
-    lowered = err_text.lower()
-    for needle in _SECRET_NEEDLES:
-        assert needle.lower() not in lowered
 
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "postgresql://" not in captured.err
-    assert _SYNTHETIC_DSN_SECRET not in captured.err
-    assert "slice1_retention_cleanup" not in captured.out
+    assert_retention_failure_output_safe(
+        err_text,
+        captured.err,
+        summary_stdout=captured.out,
+        summary_stderr=captured.err,
+        summary_markers=("slice1_retention_cleanup",),
+    )
 
 
 @pytest.mark.asyncio
@@ -350,11 +341,13 @@ async def test_run_slice1_retention_cleanup_from_env_config_failure_no_dsn_leak(
         await main_mod.run_slice1_retention_cleanup_from_env()
 
     captured = capsys.readouterr()
-    assert _SYNTHETIC_DSN_SECRET not in captured.out
-    assert _SYNTHETIC_DSN_SECRET not in captured.err
-    assert "postgresql://" not in captured.out
-    assert "postgresql://" not in captured.err
-    assert "slice1_retention_cleanup" not in captured.out
+    assert_retention_failure_output_safe(
+        captured.out,
+        captured.err,
+        summary_stdout=captured.out,
+        summary_stderr=captured.err,
+        summary_markers=("slice1_retention_cleanup",),
+    )
 
 
 @pytest.mark.asyncio
@@ -401,10 +394,17 @@ async def test_run_slice1_retention_cleanup_from_env_dependency_failure_taxonomy
         await main_mod.run_slice1_retention_cleanup_from_env()
 
     assert _classify_retention_boundary_exception_for_tests(exc_info.value) == "dependency_error"
-    assert _SYNTHETIC_DSN not in str(exc_info.value)
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
+    assert_retention_failure_output_safe(
+        exc_info.value,
+        captured.out,
+        captured.err,
+        summary_stdout=captured.out,
+        summary_stderr=captured.err,
+        summary_markers=("slice1_retention_cleanup",),
+    )
 
 
 def test_main_delegates_to_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:

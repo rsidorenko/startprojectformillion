@@ -17,18 +17,10 @@ from app.persistence.slice1_retention_manual_cleanup import (
     RetentionSettings,
 )
 from app.security.config import ConfigurationError, RuntimeConfig
+from tests.retention_boundary_assertions import assert_retention_failure_output_safe
 
 _SYNTHETIC_DSN = "postgresql://user:secret@127.0.0.1:5432/scheduled_test"
 _SYNTHETIC_DSN_SECRET = "secret"
-_SECRET_NEEDLES = (
-    "postgres://",
-    "postgresql://",
-    "Bearer ",
-    "PRIVATE KEY",
-    "TOP_SECRET",
-    "SECRET",
-    "TOKEN",
-)
 
 ENV_SCHED = scheduled_mod.SLICE1_RETENTION_SCHEDULED_ENABLE_DELETE
 
@@ -466,13 +458,14 @@ def test_scheduled_opt_in_cleanup_failure_closes_pool_and_sanitizes_output(
 
     captured = capsys.readouterr()
     assert _classify_retention_boundary_exception_for_tests(excinfo.value) == "unexpected_error"
-    assert "slice1_retention_scheduled_cleanup" not in captured.out
-    assert _SYNTHETIC_DSN not in str(excinfo.value)
-    assert _SYNTHETIC_DSN not in captured.out
-    assert _SYNTHETIC_DSN not in captured.err
-    lowered = str(excinfo.value).lower()
-    for needle in _SECRET_NEEDLES:
-        assert needle.lower() not in lowered
+    assert_retention_failure_output_safe(
+        excinfo.value,
+        captured.out,
+        captured.err,
+        summary_stdout=captured.out,
+        summary_stderr=captured.err,
+        summary_markers=("slice1_retention_scheduled_cleanup",),
+    )
 
 
 @pytest.mark.asyncio
@@ -534,12 +527,17 @@ async def test_scheduled_dependency_failure_taxonomy_and_no_summary(
         await scheduled_mod.run_slice1_retention_scheduled_from_env()
 
     assert _classify_retention_boundary_exception_for_tests(exc_info.value) == "dependency_error"
-    assert _SYNTHETIC_DSN not in str(exc_info.value)
-    assert _SYNTHETIC_DSN_SECRET not in str(exc_info.value)
     captured = capsys.readouterr()
-    assert "slice1_retention_scheduled_cleanup" not in captured.out
     assert captured.out == ""
     assert captured.err == ""
+    assert_retention_failure_output_safe(
+        exc_info.value,
+        captured.out,
+        captured.err,
+        summary_stdout=captured.out,
+        summary_stderr=captured.err,
+        summary_markers=("slice1_retention_scheduled_cleanup",),
+    )
 
 
 def test_main_delegates_to_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:

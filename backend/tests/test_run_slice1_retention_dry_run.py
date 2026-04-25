@@ -9,19 +9,11 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from tests.retention_boundary_assertions import assert_no_retention_secret_fragments
 
 
 _BACKEND_DIR = Path(__file__).resolve().parents[1]
 _SCRIPT_PATH = _BACKEND_DIR / "scripts" / "run_slice1_retention_dry_run.py"
-_SECRET_NEEDLES = (
-    "postgres://",
-    "postgresql://",
-    "Bearer ",
-    "PRIVATE KEY",
-    "TOP_SECRET",
-    "SECRET",
-    "TOKEN",
-)
 
 
 def _load_script_module() -> ModuleType:
@@ -183,6 +175,4 @@ def test_raw_database_url_not_exposed_in_helper_error(monkeypatch: pytest.Monkey
     err = str(exc_info.value)
     assert _classify_retention_boundary_exception_for_tests(exc_info.value) == "dependency_error"
     assert raw_db_url not in err
-    lowered = err.lower()
-    for needle in _SECRET_NEEDLES:
-        assert needle.lower() not in lowered
+    assert_no_retention_secret_fragments(err)
