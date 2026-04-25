@@ -20,6 +20,28 @@ def test_assert_no_retention_secret_fragments_rejects_forbidden_fragment(fragmen
         assert_no_retention_secret_fragments(f"synthetic output contains {fragment} marker")
 
 
+@pytest.mark.parametrize(
+    ("fragment", "variant"),
+    (
+        ("postgres://", "PoStGrEs://"),
+        ("postgresql://", "POSTGRESQL://"),
+        ("Bearer ", "bearer "),
+        ("PRIVATE KEY", "private key"),
+        ("TOP_SECRET", "Top_Secret"),
+        ("SECRET", "secret"),
+        ("TOKEN", "token"),
+    ),
+)
+def test_assert_no_retention_secret_fragments_rejects_mixed_case_forbidden_variants(
+    fragment: str,
+    variant: str,
+) -> None:
+    with pytest.raises(AssertionError):
+        assert_no_retention_secret_fragments(
+            f"synthetic output contains mixed-case {variant} variant of {fragment}"
+        )
+
+
 def test_assert_no_retention_success_summary_accepts_text_without_markers() -> None:
     assert_no_retention_success_summary(
         stdout="retention command failed before summary output",
@@ -58,6 +80,19 @@ def test_assert_retention_failure_output_safe_rejects_forbidden_fragment_in_any_
         assert_retention_failure_output_safe(
             "safe text",
             Exception("saw Bearer placeholder marker in output"),
+            summary_stdout="",
+            summary_stderr="",
+        )
+
+
+@pytest.mark.parametrize("variant", ("bearer ", "BeArEr ", "TOKEN", "tOkEn"))
+def test_assert_retention_failure_output_safe_rejects_mixed_case_forbidden_fragment_in_any_part(
+    variant: str,
+) -> None:
+    with pytest.raises(AssertionError):
+        assert_retention_failure_output_safe(
+            "safe text",
+            f"synthetic mixed-case marker appears: {variant}",
             summary_stdout="",
             summary_stderr="",
         )
