@@ -47,38 +47,20 @@ def _build_child_env() -> dict[str, str]:
 
 
 def _operator_billing_subprocess_env(full_child_env: dict[str, str]) -> dict[str, str]:
-    """Minimal env for ``check_operator_billing_ingest_apply_e2e`` (matches advisory CI wiring).
+    """Child env for ``check_operator_billing_ingest_apply_e2e``: full smoke env minus slice-1 feature flags.
 
-    That script only needs ``DATABASE_URL`` plus billing ingest/apply opt-ins; passing
-    issuance/ADM-02/Telegram/slice-1 flags is unnecessary and can perturb config-dependent paths.
+    The billing script only reads ``DATABASE_URL`` and billing opt-ins, but the subprocess still
+    inherits runner/packaging variables from the parent env. We drop issuance/ADM-02/Telegram/repo
+    toggles so billing is not coupled to those code paths while keeping the rest of ``child_env``.
     """
-    passthrough = (
-        "PATH",
-        "HOME",
-        "LANG",
-        "LC_ALL",
-        "PYTHONUTF8",
-        "PYTHONIOENCODING",
-        "PYTHONNOUSERSITE",
-        "PYTHONPATH",
-        "PYTHONHOME",
-        "TERM",
-        "SSL_CERT_FILE",
-        "REQUESTS_CA_BUNDLE",
-        "PIP_NO_INPUT",
-        "SYSTEMROOT",
-        "COMSPEC",
-        "PATHEXT",
-        "TMPDIR",
-        "TEMP",
-        "TMP",
-    )
-    out: dict[str, str] = {}
-    for key in passthrough:
-        val = full_child_env.get(key) or os.environ.get(key)
-        if val:
-            out[key] = str(val)
-    out["DATABASE_URL"] = str(full_child_env["DATABASE_URL"])
+    out = {str(k): str(v) for k, v in full_child_env.items()}
+    for key in (
+        "ISSUANCE_OPERATOR_ENABLE",
+        "TELEGRAM_ACCESS_RESEND_ENABLE",
+        "ADM02_ENSURE_ACCESS_ENABLE",
+        "SLICE1_USE_POSTGRES_REPOS",
+    ):
+        out.pop(key, None)
     out["BILLING_NORMALIZED_INGEST_ENABLE"] = "1"
     out["BILLING_SUBSCRIPTION_APPLY_ENABLE"] = "1"
     return out

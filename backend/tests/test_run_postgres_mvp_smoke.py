@@ -125,7 +125,7 @@ def test_runs_five_commands_in_order_and_sets_expected_env(monkeypatch: pytest.M
     assert env_fifth["ADM02_ENSURE_ACCESS_ENABLE"] == "1"
     assert env_first["BOT_TOKEN"] == "1234567890tok"
     assert env_second["BOT_TOKEN"] == "1234567890tok"
-    assert "BOT_TOKEN" not in env_third
+    assert env_third["BOT_TOKEN"] == "1234567890tok"
     assert env_fourth["BOT_TOKEN"] == "1234567890tok"
     assert env_fifth["BOT_TOKEN"] == "1234567890tok"
     assert env_first["DATABASE_URL"] == raw_db_url
@@ -176,7 +176,7 @@ def test_preserves_existing_bot_token(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(recorded_envs) == 5
     assert recorded_envs[0]["BOT_TOKEN"] == "already-set-token"
     assert recorded_envs[1]["BOT_TOKEN"] == "already-set-token"
-    assert "BOT_TOKEN" not in recorded_envs[2]
+    assert recorded_envs[2]["BOT_TOKEN"] == "already-set-token"
     assert recorded_envs[3]["BOT_TOKEN"] == "already-set-token"
     assert recorded_envs[4]["BOT_TOKEN"] == "already-set-token"
 

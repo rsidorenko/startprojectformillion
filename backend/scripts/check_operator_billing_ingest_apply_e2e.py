@@ -17,7 +17,7 @@ import asyncpg
 from app.application.billing_ingestion_main import async_run_billing_ingest_from_parsed, parse_json_to_normalized_billing_input
 from app.application.billing_subscription_apply_main import async_run_apply
 from app.domain.billing_apply_rules import UC05_ALLOWLISTED_EVENT_TYPE_SUBSCRIPTION_ACTIVATED
-from app.persistence.postgres_migrations import apply_postgres_migrations
+from app.persistence.postgres_migrations import MigrationLedgerDriftError, apply_postgres_migrations
 from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
 from app.shared.types import OperationOutcomeCategory, SubscriptionSnapshotState
 
@@ -196,6 +196,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.parse_args(argv)
     try:
         asyncio.run(run_operator_billing_ingest_apply_e2e())
+    except MigrationLedgerDriftError:
+        _print_stderr_safe("operator_billing_ingest_apply_e2e: fail_ledger_drift")
+        return 1
     except RuntimeError:
         _print_stderr_safe(_STDERR_FAIL)
         return 1

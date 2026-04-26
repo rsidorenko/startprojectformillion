@@ -171,6 +171,26 @@ def test_runtime_error_returns_fail_no_forbidden_output(
         assert frag not in out.err
 
 
+def test_migration_ledger_drift_returns_safe_stderr_line(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = _load_script_module()
+
+    async def drift_run() -> None:
+        raise script.MigrationLedgerDriftError("ledger drift detail must not leak")
+
+    monkeypatch.setattr(script, "run_operator_billing_ingest_apply_e2e", drift_run)
+    rc = script.main([])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert out.out == ""
+    assert out.err.strip() == "operator_billing_ingest_apply_e2e: fail_ledger_drift"
+    assert "Traceback" not in out.err
+    assert "ledger drift" not in out.err.lower()
+    for frag in _FORBIDDEN:
+        assert frag not in out.err
+
+
 def test_unexpected_exception_returns_failed_without_traceback(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -222,10 +222,9 @@ Use this only when local isolated path is unavailable and only against explicitl
    Canonical smoke still does not perform retention deletes.
 3. Runs operator billing ingest/apply e2e smoke with synthetic data:
    `python scripts/check_operator_billing_ingest_apply_e2e.py`.
-   The helper passes a **minimal** child environment for this step only (`DATABASE_URL` plus
-   billing ingest/apply opt-ins, plus standard process passthrough such as `PATH`), matching the
-   advisory retention workflow wiring—**not** the full issuance/ADM-02/Telegram/slice-1 flag bundle
-   used for access fulfillment and pytest.
+   The helper passes the same smoke ``child_env`` for this subprocess **minus** issuance,
+   Telegram resend, ADM-02 ensure-access, and ``SLICE1_USE_POSTGRES_REPOS`` (billing reads only
+   ``DATABASE_URL`` and billing ingest/apply opt-ins; other runner/packaging variables stay intact).
    This includes duplicate replay and idempotent apply checks.
 4. Runs access fulfillment e2e smoke with synthetic data:
    `python scripts/check_postgres_mvp_access_fulfillment_e2e.py`.
