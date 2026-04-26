@@ -39,3 +39,11 @@ class AllowlistAdm02Authorization:
         correlation_id: str,
     ) -> bool:
         return actor.internal_admin_principal_id in self._allowed_ids
+
+    async def check_adm02_ensure_access_allowed(
+        self,
+        actor: AdminActorRef,
+        *,
+        correlation_id: str,
+    ) -> bool:
+        return actor.internal_admin_principal_id in self._allowed_ids

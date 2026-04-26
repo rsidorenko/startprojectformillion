@@ -13,8 +13,45 @@ from app.admin_support.adm02_endpoint import (
     Adm02OutboundSummary,
     execute_adm02_endpoint,
 )
+from app.admin_support.adm02_ensure_access import (
+    Adm02EnsureAccessHandler,
+    NoopAdm02EnsureAccessAuditSink,
+)
+from app.admin_support.adm02_ensure_access_audit_logging import (
+    FanoutAdm02EnsureAccessAuditSink,
+    StructuredLoggingAdm02EnsureAccessAuditSink,
+)
+from app.admin_support.adm02_ensure_access_audit_postgres import (
+    PostgresAdm02EnsureAccessAuditSink,
+)
+from app.admin_support.adm02_ensure_access_audit_read import (
+    Adm02EnsureAccessAuditLookupHandler,
+)
+from app.admin_support.adm02_ensure_access_audit_read_endpoint import (
+    Adm02EnsureAccessAuditLookupEndpointResponse,
+    Adm02EnsureAccessAuditLookupEvidenceItem,
+    Adm02EnsureAccessAuditLookupHandlerLike,
+    Adm02EnsureAccessAuditLookupInboundRequest,
+    execute_adm02_ensure_access_audit_lookup_endpoint,
+)
+from app.admin_support.adm02_postgres_ensure_access_audit_read_adapter import (
+    Adm02PostgresEnsureAccessAuditReadAdapter,
+)
+from app.admin_support.adm02_ensure_access_endpoint import (
+    Adm02EnsureAccessEndpointResponse,
+    Adm02EnsureAccessHandlerLike,
+    Adm02EnsureAccessInboundRequest,
+    Adm02EnsureAccessOutboundSummary,
+    execute_adm02_ensure_access_endpoint,
+)
+from app.admin_support.adm02_ensure_access_mutation import (
+    Adm02EnsureAccessIssuanceMutationAdapter,
+    FixedAdm02MutationOptIn,
+)
+from app.admin_support.adm02_identity_resolve_adapter import Adm02IdentityResolveAdapter
 from app.admin_support.adm01_lookup import Adm01LookupHandler
 from app.admin_support.adm01_postgres_issuance_read_adapter import Adm01PostgresIssuanceReadAdapter
+from app.admin_support.adm01_identity_resolve_adapter import Adm01IdentityResolveAdapter
 from app.admin_support.adm01_subscription_policy_read_adapter import (
     Adm01SubscriptionPolicyReadAdapter,
 )
@@ -35,6 +72,11 @@ from app.admin_support.adm01_wiring import (
     build_adm01_policy_read_from_postgres_snapshots,
 )
 from app.admin_support.adm02_wiring import build_adm02_internal_diagnostics_http_app
+from app.admin_support.adm02_wiring import (
+    build_adm02_ensure_access_audit_lookup_handler,
+    build_adm02_ensure_access_handler,
+    build_adm02_internal_support_http_app,
+)
 from app.admin_support.authorization import AllowlistAdm01Authorization, AllowlistAdm02Authorization
 from app.admin_support.contracts import (
     AdminActorRef,
@@ -48,6 +90,10 @@ from app.admin_support.contracts import (
     Adm01LookupOutcome,
     Adm01LookupResult,
     Adm01LookupSummary,
+    Adm01SupportAccessReadinessBucket,
+    Adm01SupportNextAction,
+    Adm01SupportReadinessSummary,
+    Adm01SupportSubscriptionBucket,
     Adm01PolicyReadPort,
     Adm01RedactionPort,
     Adm01SubscriptionReadPort,
@@ -71,6 +117,26 @@ from app.admin_support.contracts import (
     Adm02ReconciliationReadPort,
     Adm02ReconciliationRunMarker,
     Adm02RedactionPort,
+    Adm02EnsureAccessInput,
+    Adm02EnsureAccessOutcome,
+    Adm02EnsureAccessResult,
+    Adm02EnsureAccessSummary,
+    Adm02EnsureAccessRemediationResult,
+    Adm02EnsureAccessAuthorizationPort,
+    Adm02MutationOptInPort,
+    Adm02EnsureAccessMutationPort,
+    Adm02EnsureAccessAuditEvent,
+    Adm02EnsureAccessAuditEventType,
+    Adm02EnsureAccessAuditEvidenceItem,
+    Adm02EnsureAccessAuditLookupInput,
+    Adm02EnsureAccessAuditLookupOutcome,
+    Adm02EnsureAccessAuditLookupResponse,
+    Adm02EnsureAccessAuditReadPort,
+    Adm02EnsureAccessAuditReadQuery,
+    Adm02EnsureAccessAuditReadResult,
+    Adm02EnsureAccessAuditOutcomeBucket,
+    Adm02EnsureAccessAuditPort,
+    Adm02EnsureAccessAuditPrincipalMarker,
     EntitlementSummary,
     EntitlementSummaryCategory,
     InternalUserTarget,
@@ -91,6 +157,24 @@ __all__ = [
     "Adm01OutboundSummary",
     "Adm02DiagnosticsHandlerLike",
     "Adm02EndpointResponse",
+    "Adm02EnsureAccessHandler",
+    "NoopAdm02EnsureAccessAuditSink",
+    "FanoutAdm02EnsureAccessAuditSink",
+    "StructuredLoggingAdm02EnsureAccessAuditSink",
+    "PostgresAdm02EnsureAccessAuditSink",
+    "Adm02EnsureAccessAuditLookupHandler",
+    "Adm02EnsureAccessAuditLookupEndpointResponse",
+    "Adm02EnsureAccessAuditLookupEvidenceItem",
+    "Adm02EnsureAccessAuditLookupHandlerLike",
+    "Adm02EnsureAccessAuditLookupInboundRequest",
+    "Adm02PostgresEnsureAccessAuditReadAdapter",
+    "Adm02EnsureAccessEndpointResponse",
+    "Adm02EnsureAccessHandlerLike",
+    "Adm02EnsureAccessInboundRequest",
+    "Adm02EnsureAccessOutboundSummary",
+    "Adm02EnsureAccessIssuanceMutationAdapter",
+    "FixedAdm02MutationOptIn",
+    "Adm02IdentityResolveAdapter",
     "Adm02InboundRequest",
     "Adm02OutboundSummary",
     "AllowlistAdm01Authorization",
@@ -108,6 +192,7 @@ __all__ = [
     "Adm01IssuanceReadPort",
     "Adm01LookupHandler",
     "Adm01PostgresIssuanceReadAdapter",
+    "Adm01IdentityResolveAdapter",
     "Adm01SubscriptionPolicyReadAdapter",
     "Adm02AuthorizationPort",
     "Adm02BillingFactsCategory",
@@ -125,6 +210,9 @@ __all__ = [
     "build_adm01_lookup_handler",
     "build_adm01_policy_read_from_postgres_snapshots",
     "build_adm02_internal_diagnostics_http_app",
+    "build_adm02_ensure_access_handler",
+    "build_adm02_ensure_access_audit_lookup_handler",
+    "build_adm02_internal_support_http_app",
     "Adm02DiagnosticsOutcome",
     "Adm02DiagnosticsResult",
     "Adm02DiagnosticsSummary",
@@ -139,10 +227,34 @@ __all__ = [
     "Adm02ReconciliationReadPort",
     "Adm02ReconciliationRunMarker",
     "Adm02RedactionPort",
+    "Adm02EnsureAccessInput",
+    "Adm02EnsureAccessOutcome",
+    "Adm02EnsureAccessResult",
+    "Adm02EnsureAccessSummary",
+    "Adm02EnsureAccessRemediationResult",
+    "Adm02EnsureAccessAuthorizationPort",
+    "Adm02MutationOptInPort",
+    "Adm02EnsureAccessMutationPort",
+    "Adm02EnsureAccessAuditEvent",
+    "Adm02EnsureAccessAuditEventType",
+    "Adm02EnsureAccessAuditEvidenceItem",
+    "Adm02EnsureAccessAuditLookupInput",
+    "Adm02EnsureAccessAuditLookupOutcome",
+    "Adm02EnsureAccessAuditLookupResponse",
+    "Adm02EnsureAccessAuditReadPort",
+    "Adm02EnsureAccessAuditReadQuery",
+    "Adm02EnsureAccessAuditReadResult",
+    "Adm02EnsureAccessAuditOutcomeBucket",
+    "Adm02EnsureAccessAuditPort",
+    "Adm02EnsureAccessAuditPrincipalMarker",
     "Adm01LookupInput",
     "Adm01LookupOutcome",
     "Adm01LookupResult",
     "Adm01LookupSummary",
+    "Adm01SupportAccessReadinessBucket",
+    "Adm01SupportNextAction",
+    "Adm01SupportReadinessSummary",
+    "Adm01SupportSubscriptionBucket",
     "Adm01PolicyReadPort",
     "Adm01RedactionPort",
     "Adm01SubscriptionReadPort",
@@ -156,4 +268,6 @@ __all__ = [
     "TelegramUserTarget",
     "execute_adm01_endpoint",
     "execute_adm02_endpoint",
+    "execute_adm02_ensure_access_endpoint",
+    "execute_adm02_ensure_access_audit_lookup_endpoint",
 ]

@@ -100,6 +100,36 @@ class AdminPolicyFlag(str, Enum):
     ENFORCE_MANUAL_REVIEW = "enforce_manual_review"
 
 
+class Adm01SupportSubscriptionBucket(str, Enum):
+    UNKNOWN = "unknown"
+    INACTIVE = "inactive"
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class Adm01SupportAccessReadinessBucket(str, Enum):
+    NOT_APPLICABLE_NO_ACTIVE_SUBSCRIPTION = "not_applicable_no_active_subscription"
+    ACTIVE_ACCESS_NOT_READY = "active_access_not_ready"
+    ACTIVE_ACCESS_READY = "active_access_ready"
+    UNKNOWN_DUE_TO_INTERNAL_ERROR = "unknown_due_to_internal_error"
+
+
+class Adm01SupportNextAction(str, Enum):
+    ASK_USER_TO_USE_STATUS = "ask_user_to_use_status"
+    ASK_USER_TO_USE_GET_ACCESS = "ask_user_to_use_get_access"
+    INVESTIGATE_BILLING_APPLY = "investigate_billing_apply"
+    INVESTIGATE_ISSUANCE = "investigate_issuance"
+
+
+@dataclass(frozen=True, slots=True)
+class Adm01SupportReadinessSummary:
+    telegram_identity_known: bool
+    subscription_bucket: Adm01SupportSubscriptionBucket
+    access_readiness_bucket: Adm01SupportAccessReadinessBucket
+    recommended_next_action: Adm01SupportNextAction
+
+
 class IssuanceOperationalState(str, Enum):
     UNKNOWN = "unknown"
     NONE = "none"
@@ -132,6 +162,7 @@ class Adm01LookupSummary:
     entitlement: EntitlementSummary
     policy_flag: AdminPolicyFlag
     issuance: IssuanceOperationalSummary
+    support_readiness: Adm01SupportReadinessSummary
     redaction: RedactionMarker
 
 
@@ -337,3 +368,150 @@ class Adm02RedactionPort(Protocol):
 class Adm02FactOfAccessAuditPort(Protocol):
     async def append_fact_of_access(self, record: Adm02FactOfAccessAuditRecord) -> None:
         ...
+
+
+class Adm02EnsureAccessOutcome(str, Enum):
+    SUCCESS = "success"
+    DENIED = "denied"
+    INVALID_INPUT = "invalid_input"
+    DEPENDENCY_FAILURE = "dependency_failure"
+
+
+class Adm02EnsureAccessRemediationResult(str, Enum):
+    NOOP_IDENTITY_UNKNOWN = "noop_identity_unknown"
+    NOOP_NO_ACTIVE_SUBSCRIPTION = "noop_no_active_subscription"
+    NOOP_ACCESS_ALREADY_READY = "noop_access_already_ready"
+    ISSUED_ACCESS = "issued_access"
+    FAILED_SAFE = "failed_safe"
+
+
+@dataclass(frozen=True, slots=True)
+class Adm02EnsureAccessSummary:
+    telegram_identity_known: bool
+    subscription_bucket: Adm01SupportSubscriptionBucket
+    access_readiness_bucket: Adm01SupportAccessReadinessBucket
+    remediation_result: Adm02EnsureAccessRemediationResult
+    recommended_next_action: Adm01SupportNextAction
+
+
+@dataclass(frozen=True, slots=True)
+class Adm02EnsureAccessInput:
+    actor: AdminActorRef
+    target: AdminTargetLookup
+    correlation_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class Adm02EnsureAccessResult:
+    outcome: Adm02EnsureAccessOutcome
+    correlation_id: str
+    summary: Adm02EnsureAccessSummary | None
+
+
+class Adm02EnsureAccessAuthorizationPort(Protocol):
+    async def check_adm02_ensure_access_allowed(
+        self,
+        actor: AdminActorRef,
+        *,
+        correlation_id: str,
+    ) -> bool:
+        ...
+
+
+class Adm02MutationOptInPort(Protocol):
+    async def check_adm02_mutation_opt_in_enabled(self, *, correlation_id: str) -> bool:
+        ...
+
+
+class Adm02EnsureAccessMutationPort(Protocol):
+    async def ensure_access_issued(self, internal_user_id: str, *, correlation_id: str) -> bool:
+        """Return True iff a new issuance was created; False if already ready/idempotent."""
+        ...
+
+
+class Adm02EnsureAccessAuditEventType(str, Enum):
+    ENSURE_ACCESS = "ensure_access"
+
+
+class Adm02EnsureAccessAuditOutcomeBucket(str, Enum):
+    DENIED_UNAUTHORIZED = "denied_unauthorized"
+    DENIED_MUTATION_OPT_IN_DISABLED = "denied_mutation_opt_in_disabled"
+    NOOP_IDENTITY_UNKNOWN = "noop_identity_unknown"
+    NOOP_NO_ACTIVE_SUBSCRIPTION = "noop_no_active_subscription"
+    NOOP_ACCESS_ALREADY_READY = "noop_access_already_ready"
+    ISSUED_ACCESS = "issued_access"
+    FAILED_SAFE = "failed_safe"
+    DEPENDENCY_FAILURE = "dependency_failure"
+    INVALID_INPUT = "invalid_input"
+
+
+class Adm02EnsureAccessAuditPrincipalMarker(str, Enum):
+    INTERNAL_ADMIN_REDACTED = "internal_admin_redacted"
+
+
+@dataclass(frozen=True, slots=True)
+class Adm02EnsureAccessAuditEvent:
+    event_type: Adm02EnsureAccessAuditEventType
+    outcome_bucket: Adm02EnsureAccessAuditOutcomeBucket
+    remediation_result: Adm02EnsureAccessRemediationResult | None
+    readiness_bucket: Adm01SupportAccessReadinessBucket | None
+    principal_marker: Adm02EnsureAccessAuditPrincipalMarker
+    correlation_id: str
+
+
+class Adm02EnsureAccessAuditPort(Protocol):
+    async def append_ensure_access_event(self, event: Adm02EnsureAccessAuditEvent) -> None:
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class Adm02EnsureAccessAuditReadQuery:
+    correlation_id: str | None
+    limit: int
+
+
+@dataclass(frozen=True, slots=True)
+class Adm02EnsureAccessAuditEvidenceItem:
+    created_at: str
+    event_type: Adm02EnsureAccessAuditEventType
+    outcome_bucket: Adm02EnsureAccessAuditOutcomeBucket
+    remediation_result: Adm02EnsureAccessRemediationResult | None
+    readiness_bucket: Adm01SupportAccessReadinessBucket | None
+    principal_marker: Adm02EnsureAccessAuditPrincipalMarker
+    correlation_id: str
+    source_marker: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Adm02EnsureAccessAuditReadResult:
+    items: tuple[Adm02EnsureAccessAuditEvidenceItem, ...]
+
+
+class Adm02EnsureAccessAuditReadPort(Protocol):
+    async def read_ensure_access_audit_evidence(
+        self,
+        query: Adm02EnsureAccessAuditReadQuery,
+    ) -> Adm02EnsureAccessAuditReadResult:
+        ...
+
+
+class Adm02EnsureAccessAuditLookupOutcome(str, Enum):
+    SUCCESS = "success"
+    DENIED = "denied"
+    INVALID_INPUT = "invalid_input"
+    DEPENDENCY_FAILURE = "dependency_failure"
+
+
+@dataclass(frozen=True, slots=True)
+class Adm02EnsureAccessAuditLookupInput:
+    actor: AdminActorRef
+    correlation_id: str
+    evidence_correlation_id: str | None
+    limit: int
+
+
+@dataclass(frozen=True, slots=True)
+class Adm02EnsureAccessAuditLookupResponse:
+    outcome: Adm02EnsureAccessAuditLookupOutcome
+    correlation_id: str
+    result: Adm02EnsureAccessAuditReadResult | None
