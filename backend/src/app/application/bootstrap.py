@@ -16,6 +16,14 @@ from app.application.telegram_access_resend import (
     TelegramAccessResendHandler,
     telegram_access_resend_enabled_from_env,
 )
+from app.application.telegram_command_rate_limit import (
+    InMemoryTelegramCommandRateLimiter,
+    TelegramCommandRateLimiter,
+)
+from app.application.telegram_command_rate_limit_telemetry import (
+    StructuredLoggingTelegramCommandRateLimitTelemetry,
+    TelegramCommandRateLimitTelemetry,
+)
 from app.application.telegram_update_dedup import (
     InMemoryTelegramUpdateDedupGuard,
     TelegramUpdateDedupGuard,
@@ -51,6 +59,8 @@ class Slice1Composition:
     snapshots: SubscriptionSnapshotReader
     outbound_delivery: OutboundDeliveryLedger
     access_resend: TelegramAccessResendHandler
+    command_rate_limiter: TelegramCommandRateLimiter
+    command_rate_limit_telemetry: TelegramCommandRateLimitTelemetry
     telegram_update_dedup: TelegramUpdateDedupGuard
 
 
@@ -67,6 +77,8 @@ def build_slice1_composition(
     resend_cooldown: AccessResendCooldownStore | None = None,
     resend_disabled_hit_marker: TelegramAccessResendDisabledHitMarker | None = None,
     access_resend_enabled: bool | None = None,
+    command_rate_limiter: TelegramCommandRateLimiter | None = None,
+    command_rate_limit_telemetry: TelegramCommandRateLimitTelemetry | None = None,
     telegram_update_dedup: TelegramUpdateDedupGuard | None = None,
 ) -> Slice1Composition:
     if (identity is None) ^ (idempotency is None):
@@ -88,6 +100,8 @@ def build_slice1_composition(
     delivery = outbound_delivery or InMemoryOutboundDeliveryLedger()
     cooldown = resend_cooldown or InMemoryAccessResendCooldownStore()
     dedup = telegram_update_dedup or InMemoryTelegramUpdateDedupGuard()
+    rate_limiter = command_rate_limiter or InMemoryTelegramCommandRateLimiter()
+    rate_telemetry = command_rate_limit_telemetry or StructuredLoggingTelegramCommandRateLimitTelemetry()
     enabled = (
         access_resend_enabled
         if access_resend_enabled is not None
@@ -114,5 +128,7 @@ def build_slice1_composition(
             disabled_hit_marker=resend_disabled_hit_marker,
             enabled=enabled,
         ),
+        command_rate_limiter=rate_limiter,
+        command_rate_limit_telemetry=rate_telemetry,
         telegram_update_dedup=dedup,
     )

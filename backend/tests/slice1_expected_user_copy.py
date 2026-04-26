@@ -58,3 +58,5 @@ SUBSCRIPTION_ACTIVE_ACCESS_READY_TEXT = (
     "Your subscription is active and access instructions are ready. "
     "Use /get_access to receive them safely."
 )
+
+TELEGRAM_COMMAND_RATE_LIMITED_TEXT = "Too many requests. Please try again later."

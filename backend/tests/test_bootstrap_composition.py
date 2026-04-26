@@ -147,6 +147,8 @@ def test_composition_has_no_extra_service_surface() -> None:
             "snapshots",
             "outbound_delivery",
             "access_resend",
+            "command_rate_limiter",
+            "command_rate_limit_telemetry",
             "telegram_update_dedup",
         },
     )

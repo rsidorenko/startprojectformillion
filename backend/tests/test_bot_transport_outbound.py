@@ -16,6 +16,7 @@ from app.bot_transport.outbound import (
 )
 from app.bot_transport.presentation import (
     TransportAccessResendCode,
+    TransportErrorCode,
     TransportResponseCategory,
     TransportSafeResponse,
     TransportStatusCode,
@@ -227,6 +228,18 @@ def test_error_service_unavailable_safe_key() -> None:
     )
     plan = map_transport_safe_to_outbound_plan(safe)
     assert plan.message_key == OutboundMessageKey.SERVICE_UNAVAILABLE.value
+    assert plan.category is OutboundPlanCategory.ERROR
+
+
+def test_error_telegram_command_rate_limited_safe_key() -> None:
+    cid = new_correlation_id()
+    safe = TransportSafeResponse(
+        category=TransportResponseCategory.ERROR,
+        code=TransportErrorCode.TELEGRAM_COMMAND_RATE_LIMITED.value,
+        correlation_id=cid,
+    )
+    plan = map_transport_safe_to_outbound_plan(safe)
+    assert plan.message_key == OutboundMessageKey.TELEGRAM_COMMAND_RATE_LIMITED.value
     assert plan.category is OutboundPlanCategory.ERROR
 
 

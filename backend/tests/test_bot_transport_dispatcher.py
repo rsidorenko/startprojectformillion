@@ -6,6 +6,11 @@ import asyncio
 import inspect
 
 from app.application.bootstrap import build_slice1_composition
+from app.application.telegram_command_rate_limit import InMemoryTelegramCommandRateLimiter
+from app.application.telegram_command_rate_limit_telemetry import (
+    TelegramCommandRateLimitDecisionEvent,
+    NoopTelegramCommandRateLimitTelemetry,
+)
 from app.application.interfaces import SubscriptionSnapshot
 from app.bot_transport.dispatcher import Slice1Dispatcher, dispatch_slice1_transport
 from app.bot_transport.normalized import TransportIncomingEnvelope
@@ -305,3 +310,133 @@ def test_dispatcher_module_excludes_billing_issuance_admin_concepts() -> None:
     assert "billing" not in lower
     assert "issuance" not in lower
     assert "admin" not in lower
+
+
+def test_dispatch_status_rate_limited_after_window_exhausted() -> None:
+    async def main() -> None:
+        limiter = InMemoryTelegramCommandRateLimiter(
+            status_limit=2,
+            status_window_seconds=60.0,
+            access_resend_limit=99,
+            access_resend_window_seconds=60.0,
+            now_seconds=lambda: 0.0,
+        )
+        c = build_slice1_composition(
+            command_rate_limiter=limiter,
+            command_rate_limit_telemetry=NoopTelegramCommandRateLimitTelemetry(),
+        )
+        cid = new_correlation_id()
+        uid = 501
+        await dispatch_slice1_transport(_env(cid=cid, uid=uid, update_id=1, text="/start"), c)
+        r1 = await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
+        r2 = await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
+        r3 = await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
+        assert r1.code == TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value
+        assert r2.code == TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value
+        assert r3.category is TransportResponseCategory.ERROR
+        assert r3.code == TransportErrorCode.TELEGRAM_COMMAND_RATE_LIMITED.value
+
+    _run(main())
+
+
+def test_dispatch_get_access_and_resend_share_access_resend_bucket() -> None:
+    async def main() -> None:
+        limiter = InMemoryTelegramCommandRateLimiter(
+            status_limit=99,
+            status_window_seconds=60.0,
+            access_resend_limit=1,
+            access_resend_window_seconds=60.0,
+            now_seconds=lambda: 0.0,
+        )
+        c = build_slice1_composition(
+            command_rate_limiter=limiter,
+            command_rate_limit_telemetry=NoopTelegramCommandRateLimitTelemetry(),
+        )
+        cid = new_correlation_id()
+        uid = 502
+        g = await dispatch_slice1_transport(_env(cid=cid, uid=uid, update_id=1, text="/get_access"), c)
+        r = await dispatch_slice1_transport(_env(cid=cid, uid=uid, update_id=2, text="/resend_access"), c)
+        assert g.code == TransportAccessResendCode.NOT_ENABLED.value
+        assert r.category is TransportResponseCategory.ERROR
+        assert r.code == TransportErrorCode.TELEGRAM_COMMAND_RATE_LIMITED.value
+
+    _run(main())
+
+
+def test_dispatch_rate_limit_telemetry_failure_does_not_block_allowed_status() -> None:
+    class _BoomTelemetry(NoopTelegramCommandRateLimitTelemetry):
+        async def emit_decision(self, event: TelegramCommandRateLimitDecisionEvent) -> None:
+            _ = event
+            raise RuntimeError("telemetry boom")
+
+    async def main() -> None:
+        c = build_slice1_composition(
+            command_rate_limit_telemetry=_BoomTelemetry(),
+        )
+        cid = new_correlation_id()
+        uid = 503
+        await dispatch_slice1_transport(_env(cid=cid, uid=uid, update_id=1, text="/start"), c)
+        r = await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
+        assert r.category is TransportResponseCategory.SUCCESS
+        assert r.code == TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value
+
+    _run(main())
+
+
+def test_dispatch_rate_limited_still_emits_limited_when_telemetry_fails() -> None:
+    class _BoomTelemetry(NoopTelegramCommandRateLimitTelemetry):
+        async def emit_decision(self, event: TelegramCommandRateLimitDecisionEvent) -> None:
+            _ = event
+            raise RuntimeError("telemetry boom")
+
+    async def main() -> None:
+        limiter = InMemoryTelegramCommandRateLimiter(
+            status_limit=1,
+            status_window_seconds=60.0,
+            access_resend_limit=99,
+            access_resend_window_seconds=60.0,
+            now_seconds=lambda: 0.0,
+        )
+        c = build_slice1_composition(
+            command_rate_limiter=limiter,
+            command_rate_limit_telemetry=_BoomTelemetry(),
+        )
+        cid = new_correlation_id()
+        uid = 504
+        await dispatch_slice1_transport(_env(cid=cid, uid=uid, update_id=1, text="/start"), c)
+        await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
+        r2 = await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
+        assert r2.code == TransportErrorCode.TELEGRAM_COMMAND_RATE_LIMITED.value
+
+    _run(main())
+
+
+def test_dispatch_rate_limit_emits_telemetry_events() -> None:
+    class _Spy(NoopTelegramCommandRateLimitTelemetry):
+        def __init__(self) -> None:
+            self.events: list[TelegramCommandRateLimitDecisionEvent] = []
+
+        async def emit_decision(self, event: TelegramCommandRateLimitDecisionEvent) -> None:
+            self.events.append(event)
+
+    async def main() -> None:
+        spy = _Spy()
+        limiter = InMemoryTelegramCommandRateLimiter(
+            status_limit=1,
+            status_window_seconds=60.0,
+            access_resend_limit=99,
+            access_resend_window_seconds=60.0,
+            now_seconds=lambda: 0.0,
+        )
+        c = build_slice1_composition(command_rate_limiter=limiter, command_rate_limit_telemetry=spy)
+        cid = new_correlation_id()
+        uid = 505
+        await dispatch_slice1_transport(_env(cid=cid, uid=uid, update_id=1, text="/start"), c)
+        await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
+        await dispatch_slice1_transport(_env(cid=cid, uid=uid, text="/status"), c)
+        assert [e.decision for e in spy.events] == ["allowed", "limited"]
+        assert spy.events[0].command_bucket == "status"
+        assert spy.events[0].principal_marker == "telegram_user_redacted"
+        assert spy.events[0].correlation_id == cid
+
+    _run(main())

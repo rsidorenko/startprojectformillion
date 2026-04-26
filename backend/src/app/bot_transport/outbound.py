@@ -48,6 +48,7 @@ class OutboundMessageKey(str, Enum):
     RESEND_ACCESS_COOLDOWN = "resend_access_cooldown"
     RESEND_ACCESS_NOT_READY = "resend_access_not_ready"
     RESEND_ACCESS_TEMPORARILY_UNAVAILABLE = "resend_access_temporarily_unavailable"
+    TELEGRAM_COMMAND_RATE_LIMITED = "telegram_command_rate_limited"
 
 
 class OutboundNextActionKey(str, Enum):
@@ -251,6 +252,8 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
             return _error_plan(OutboundMessageKey.TRY_AGAIN_LATER, cid)
         if code == TransportErrorCode.SERVICE_UNAVAILABLE.value:
             return _error_plan(OutboundMessageKey.SERVICE_UNAVAILABLE, cid)
+        if code == TransportErrorCode.TELEGRAM_COMMAND_RATE_LIMITED.value:
+            return _error_plan(OutboundMessageKey.TELEGRAM_COMMAND_RATE_LIMITED, cid)
         return _service_unavailable_plan(cid)
 
     return _service_unavailable_plan(cid)

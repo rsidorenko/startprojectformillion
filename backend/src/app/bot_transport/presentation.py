@@ -43,6 +43,7 @@ class TransportErrorCode(str, Enum):
     INVALID_INPUT = "invalid_input"
     TRY_AGAIN_LATER = "try_again_later"
     SERVICE_UNAVAILABLE = "service_unavailable"
+    TELEGRAM_COMMAND_RATE_LIMITED = "telegram_command_rate_limited"
 
 
 class TransportHelpCode(str, Enum):

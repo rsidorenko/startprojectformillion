@@ -30,6 +30,7 @@ from tests.slice1_expected_user_copy import (
     SLICE1_HELP_TEXT,
     SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY_TEXT,
     SUBSCRIPTION_ACTIVE_ACCESS_READY_TEXT,
+    TELEGRAM_COMMAND_RATE_LIMITED_TEXT,
 )
 
 _CID = "corr-test-01"
@@ -249,6 +250,16 @@ def test_service_unavailable_generic() -> None:
     )
     out = render_telegram_outbound_plan(plan)
     assert "temporarily unavailable" in out.message_text.lower()
+    _assert_no_dsn_or_secretish(out.message_text)
+
+
+def test_error_telegram_command_rate_limited_render() -> None:
+    plan = _plan(
+        category=OutboundPlanCategory.ERROR,
+        message_key=OutboundMessageKey.TELEGRAM_COMMAND_RATE_LIMITED.value,
+    )
+    out = render_telegram_outbound_plan(plan)
+    assert out.message_text == TELEGRAM_COMMAND_RATE_LIMITED_TEXT
     _assert_no_dsn_or_secretish(out.message_text)
 
 

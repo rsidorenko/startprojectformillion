@@ -67,6 +67,7 @@ _CATALOG_TEXT: dict[str, str] = {
         "Something went wrong. Please try again in a moment."
     ),
     OutboundMessageKey.SERVICE_UNAVAILABLE.value: _text_service_unavailable(),
+    OutboundMessageKey.TELEGRAM_COMMAND_RATE_LIMITED.value: "Too many requests. Please try again later.",
     OutboundMessageKey.RESEND_ACCESS_ACCEPTED.value: (
         "Access instructions request accepted. If safe delivery is available, instructions will be resent."
     ),
