@@ -46,6 +46,44 @@ def _build_child_env() -> dict[str, str]:
     return child_env
 
 
+def _operator_billing_subprocess_env(full_child_env: dict[str, str]) -> dict[str, str]:
+    """Minimal env for ``check_operator_billing_ingest_apply_e2e`` (matches advisory CI wiring).
+
+    That script only needs ``DATABASE_URL`` plus billing ingest/apply opt-ins; passing
+    issuance/ADM-02/Telegram/slice-1 flags is unnecessary and can perturb config-dependent paths.
+    """
+    passthrough = (
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "PYTHONUTF8",
+        "PYTHONIOENCODING",
+        "PYTHONNOUSERSITE",
+        "PYTHONPATH",
+        "PYTHONHOME",
+        "TERM",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+        "PIP_NO_INPUT",
+        "SYSTEMROOT",
+        "COMSPEC",
+        "PATHEXT",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+    )
+    out: dict[str, str] = {}
+    for key in passthrough:
+        val = full_child_env.get(key) or os.environ.get(key)
+        if val:
+            out[key] = str(val)
+    out["DATABASE_URL"] = str(full_child_env["DATABASE_URL"])
+    out["BILLING_NORMALIZED_INGEST_ENABLE"] = "1"
+    out["BILLING_SUBSCRIPTION_APPLY_ENABLE"] = "1"
+    return out
+
+
 def main() -> None:
     _require_mutating_tests_opt_in()
     child_env = _build_child_env()
@@ -66,7 +104,7 @@ def main() -> None:
     subprocess.run(
         ["python", "scripts/check_operator_billing_ingest_apply_e2e.py"],
         cwd=backend_dir,
-        env=child_env,
+        env=_operator_billing_subprocess_env(child_env),
         check=True,
     )
     subprocess.run(

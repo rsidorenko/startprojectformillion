@@ -35,6 +35,12 @@ def _step_block(text: str, step_name: str) -> str:
     return text[start:next_step]
 
 
+def test_canonical_smoke_helper_uses_isolated_env_for_operator_billing_subprocess() -> None:
+    helper = _helper_text()
+    assert "def _operator_billing_subprocess_env(" in helper
+    assert "env=_operator_billing_subprocess_env(child_env)" in helper
+
+
 def test_canonical_smoke_helper_keeps_five_step_order_contract() -> None:
     helper = _helper_text()
     retention = '["python", "scripts/run_slice1_retention_dry_run.py"]'
@@ -54,7 +60,7 @@ def test_canonical_smoke_helper_keeps_five_step_order_contract() -> None:
 def test_canonical_smoke_helper_child_env_opt_ins_contract_locked() -> None:
     helper = _helper_text()
     function_start = helper.find("def _build_child_env()")
-    function_end = helper.find("\n\ndef main()", function_start)
+    function_end = helper.find("\ndef _operator_billing_subprocess_env", function_start)
     assert function_start != -1
     assert function_end != -1
     build_child_env_block = helper[function_start:function_end]
