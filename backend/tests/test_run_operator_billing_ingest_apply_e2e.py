@@ -43,12 +43,94 @@ def test_missing_database_url_returns_fail_without_leak(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     script = _load_script_module()
+    monkeypatch.setenv("BILLING_NORMALIZED_INGEST_ENABLE", "1")
+    monkeypatch.setenv("BILLING_SUBSCRIPTION_APPLY_ENABLE", "1")
     monkeypatch.delenv("DATABASE_URL", raising=False)
     rc = script.main([])
     out = capsys.readouterr()
     assert rc == 1
     assert out.out == ""
     assert out.err.strip() == "operator_billing_ingest_apply_e2e: fail"
+    for frag in _FORBIDDEN:
+        assert frag not in out.out
+        assert frag not in out.err
+
+
+@pytest.mark.parametrize("missing_env", ["BILLING_NORMALIZED_INGEST_ENABLE", "BILLING_SUBSCRIPTION_APPLY_ENABLE"])
+def test_missing_billing_opt_in_fails_closed_without_opening_db_pool(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    missing_env: str,
+) -> None:
+    script = _load_script_module()
+    monkeypatch.setenv("DATABASE_URL", "postgresql://local/dev")
+    monkeypatch.setenv("BILLING_NORMALIZED_INGEST_ENABLE", "1")
+    monkeypatch.setenv("BILLING_SUBSCRIPTION_APPLY_ENABLE", "1")
+    monkeypatch.delenv(missing_env, raising=False)
+
+    create_pool_called = {"called": False}
+
+    async def fail_if_create_pool_called(*args, **kwargs):
+        _ = (args, kwargs)
+        create_pool_called["called"] = True
+        raise AssertionError("asyncpg.create_pool must not be called")
+
+    monkeypatch.setattr(script.asyncpg, "create_pool", fail_if_create_pool_called)
+
+    rc = script.main([])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert create_pool_called["called"] is False
+    assert out.out == ""
+    assert out.err.strip() == "operator_billing_ingest_apply_e2e: fail"
+    assert "Traceback" not in out.err
+    for frag in _FORBIDDEN:
+        assert frag not in out.out
+        assert frag not in out.err
+
+
+@pytest.mark.parametrize(
+    ("ingest_opt_in", "apply_opt_in"),
+    [
+        ("0", "1"),
+        ("1", "0"),
+        ("false", "1"),
+        ("1", "false"),
+        ("no", "1"),
+        ("1", "no"),
+        ("random", "1"),
+        ("1", "random"),
+        ("", "1"),
+        ("1", ""),
+    ],
+)
+def test_falsey_billing_opt_ins_fail_closed_without_opening_db_pool(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    ingest_opt_in: str,
+    apply_opt_in: str,
+) -> None:
+    script = _load_script_module()
+    monkeypatch.setenv("DATABASE_URL", "postgresql://local/dev")
+    monkeypatch.setenv("BILLING_NORMALIZED_INGEST_ENABLE", ingest_opt_in)
+    monkeypatch.setenv("BILLING_SUBSCRIPTION_APPLY_ENABLE", apply_opt_in)
+
+    create_pool_called = {"called": False}
+
+    async def fail_if_create_pool_called(*args, **kwargs):
+        _ = (args, kwargs)
+        create_pool_called["called"] = True
+        raise AssertionError("asyncpg.create_pool must not be called")
+
+    monkeypatch.setattr(script.asyncpg, "create_pool", fail_if_create_pool_called)
+
+    rc = script.main([])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert create_pool_called["called"] is False
+    assert out.out == ""
+    assert out.err.strip() == "operator_billing_ingest_apply_e2e: fail"
+    assert "Traceback" not in out.err
     for frag in _FORBIDDEN:
         assert frag not in out.out
         assert frag not in out.err
@@ -147,6 +229,8 @@ async def test_cleanup_called_on_partial_failure(monkeypatch: pytest.MonkeyPatch
         raise RuntimeError("forced ingest failure")
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/dev")
+    monkeypatch.setenv("BILLING_NORMALIZED_INGEST_ENABLE", "1")
+    monkeypatch.setenv("BILLING_SUBSCRIPTION_APPLY_ENABLE", "1")
     monkeypatch.setattr(script.asyncpg, "create_pool", fake_create_pool)
     monkeypatch.setattr(script, "apply_postgres_migrations", fake_apply_migrations)
     monkeypatch.setattr(script, "_cleanup_synthetic_rows", fake_cleanup)
@@ -204,6 +288,8 @@ async def test_cleanup_called_on_partial_failure_after_second_ingest(
         raise AssertionError("unexpected third ingest")
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/dev")
+    monkeypatch.setenv("BILLING_NORMALIZED_INGEST_ENABLE", "1")
+    monkeypatch.setenv("BILLING_SUBSCRIPTION_APPLY_ENABLE", "1")
     monkeypatch.setattr(script.asyncpg, "create_pool", fake_create_pool)
     monkeypatch.setattr(script, "apply_postgres_migrations", fake_apply_migrations)
     monkeypatch.setattr(script, "_cleanup_synthetic_rows", fake_cleanup)
@@ -284,6 +370,8 @@ async def test_duplicate_ingest_invokes_ingest_twice_same_parsed_then_applies_tw
         _ = (pool, internal_user_id)
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/dev")
+    monkeypatch.setenv("BILLING_NORMALIZED_INGEST_ENABLE", "1")
+    monkeypatch.setenv("BILLING_SUBSCRIPTION_APPLY_ENABLE", "1")
     monkeypatch.setattr(script.asyncpg, "create_pool", fake_create_pool)
     monkeypatch.setattr(script, "apply_postgres_migrations", fake_apply_migrations)
     monkeypatch.setattr(script, "_cleanup_synthetic_rows", fake_cleanup)

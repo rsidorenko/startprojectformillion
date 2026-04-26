@@ -24,6 +24,9 @@ from app.shared.types import OperationOutcomeCategory, SubscriptionSnapshotState
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 _MIGRATIONS_DIR = _BACKEND_ROOT / "migrations"
 _REQUIRED_DSN_ENV = "DATABASE_URL"
+_BILLING_INGEST_OPT_IN_ENV = "BILLING_NORMALIZED_INGEST_ENABLE"
+_BILLING_APPLY_OPT_IN_ENV = "BILLING_SUBSCRIPTION_APPLY_ENABLE"
+_TRUTHY_ENV_VALUES = {"1", "true", "yes"}
 _PREFIX = "operator-e2e-"
 _STDOUT_OK = "operator_billing_ingest_apply_e2e: ok"
 _STDERR_FAIL = "operator_billing_ingest_apply_e2e: fail"
@@ -69,6 +72,20 @@ def _required_database_url() -> str:
     if not dsn:
         raise RuntimeError("missing DATABASE_URL")
     return dsn
+
+
+def _is_truthy_env(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def _require_billing_operator_opt_ins() -> None:
+    ingest_enabled = _is_truthy_env(os.environ.get(_BILLING_INGEST_OPT_IN_ENV))
+    apply_enabled = _is_truthy_env(os.environ.get(_BILLING_APPLY_OPT_IN_ENV))
+    if ingest_enabled and apply_enabled:
+        return
+    raise RuntimeError("operator billing opt-ins are required")
 
 
 def _new_synthetic_ids() -> _SyntheticIds:
@@ -132,6 +149,7 @@ async def _assert_subscription_active(pool: asyncpg.Pool, *, internal_user_id: s
 
 
 async def run_operator_billing_ingest_apply_e2e() -> None:
+    _require_billing_operator_opt_ins()
     dsn = _required_database_url()
     ids = _new_synthetic_ids()
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)

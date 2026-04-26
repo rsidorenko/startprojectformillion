@@ -36,6 +36,11 @@ def _build_child_env() -> dict[str, str]:
 
     child_env = os.environ.copy()
     child_env["SLICE1_USE_POSTGRES_REPOS"] = "1"
+    child_env["BILLING_NORMALIZED_INGEST_ENABLE"] = "1"
+    child_env["BILLING_SUBSCRIPTION_APPLY_ENABLE"] = "1"
+    child_env["ISSUANCE_OPERATOR_ENABLE"] = "1"
+    child_env["TELEGRAM_ACCESS_RESEND_ENABLE"] = "1"
+    child_env["ADM02_ENSURE_ACCESS_ENABLE"] = "1"
     if not child_env.get("BOT_TOKEN"):
         child_env["BOT_TOKEN"] = "1234567890tok"
     return child_env
@@ -65,6 +70,18 @@ def main() -> None:
     )
     subprocess.run(
         ["python", "scripts/run_slice1_retention_dry_run.py"],
+        cwd=backend_dir,
+        env=child_env,
+        check=True,
+    )
+    subprocess.run(
+        ["python", "scripts/check_operator_billing_ingest_apply_e2e.py"],
+        cwd=backend_dir,
+        env=child_env,
+        check=True,
+    )
+    subprocess.run(
+        ["python", "scripts/check_postgres_mvp_access_fulfillment_e2e.py"],
         cwd=backend_dir,
         env=child_env,
         check=True,

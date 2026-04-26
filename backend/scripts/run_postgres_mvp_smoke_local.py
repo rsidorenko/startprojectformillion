@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -94,6 +95,16 @@ def _build_smoke_env(parent_env: Mapping[str, str], *, host_port: str) -> dict[s
     )
     child_env[_MUTATING_TESTS_GUARD_ENV] = "1"
     return child_env
+
+
+def _sanitize_error_message(error: Exception) -> str:
+    """Return a compact safe error message without traceback or secret-like values."""
+    message = str(error).strip() or error.__class__.__name__
+    lowered = message.lower()
+    redaction_markers = ("postgresql://", "password", "token", "secret")
+    if any(marker in lowered for marker in redaction_markers):
+        return "sensitive details redacted"
+    return message
 
 
 def _wait_for_postgres_ready(
@@ -198,15 +209,32 @@ def main(argv: Sequence[str] | None = None, *, runner: _Runner = subprocess.run)
         if smoke_failed and keep_on_failure:
             print("Local smoke failed; keeping isolated containers for inspection.")
         else:
-            _run_checked(
-                _down_command(compose_cmd, project_name=project_name, compose_path=compose_path),
-                cwd=backend_dir,
-                env=None,
-                runner=runner,
-            )
+            try:
+                _run_checked(
+                    _down_command(compose_cmd, project_name=project_name, compose_path=compose_path),
+                    cwd=backend_dir,
+                    env=None,
+                    runner=runner,
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                print("Warning: local smoke cleanup failed; run docker compose down manually for this project.")
 
     return 0
 
 
+def _run_cli(argv: Sequence[str] | None = None) -> int:
+    try:
+        return main(argv)
+    except Exception as exc:
+        safe_message = _sanitize_error_message(exc)
+        print(f"Local Docker smoke gate failed: {safe_message}", file=sys.stderr)
+        print(
+            "Action: verify Docker is running, no local Postgres port conflict, then rerun "
+            "`python scripts/run_postgres_mvp_smoke_local.py`.",
+            file=sys.stderr,
+        )
+        return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_run_cli())

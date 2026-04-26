@@ -383,3 +383,54 @@ def test_env_flag_keep_on_failure_skips_cleanup(monkeypatch: pytest.MonkeyPatch)
 
     assert any(cmd == ["python", "scripts/run_postgres_mvp_smoke.py"] for cmd in recorded_commands)
     assert not any("down" in cmd for cmd in recorded_commands)
+
+
+def test_cleanup_failure_is_best_effort_after_success(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = _load_script_module()
+    monkeypatch.setattr(script.uuid, "uuid4", lambda: type("U", (), {"hex": "aa11bb22cc33"})())
+
+    def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        command = args[0]
+        if command == ["docker", "--version"]:
+            return subprocess.CompletedProcess(command, 0, stdout="")
+        if command == ["docker", "compose", "version"]:
+            return subprocess.CompletedProcess(command, 0, stdout="")
+        if command[-3:] == ["port", "postgres", "5432"]:
+            return subprocess.CompletedProcess(command, 0, stdout="127.0.0.1:55438\n")
+        if "pg_isready" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="accepting connections\n")
+        if "down" in command:
+            raise subprocess.CalledProcessError(1, command)
+        return subprocess.CompletedProcess(command, 0, stdout="")
+
+    monkeypatch.setattr(script.subprocess, "run", fake_run)
+
+    exit_code = script.main([], runner=fake_run)
+
+    assert exit_code == 0
+    out = capsys.readouterr()
+    assert "cleanup failed" in out.out
+
+
+def test_cli_failure_is_redacted_and_returns_non_zero(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = _load_script_module()
+    raw_dsn = "postgresql://postgres:postgres@127.0.0.1:55439/postgres_smoke_local"
+
+    def fake_main(argv: Any = None) -> int:
+        raise RuntimeError(f"canonical smoke failed for {raw_dsn}")
+
+    monkeypatch.setattr(script, "main", fake_main)
+
+    exit_code = script._run_cli([])
+
+    assert exit_code == 1
+    out = capsys.readouterr()
+    assert "Local Docker smoke gate failed" in out.err
+    assert "Action: verify Docker is running" in out.err
+    assert "sensitive details redacted" in out.err
+    assert raw_dsn not in out.out
+    assert raw_dsn not in out.err
