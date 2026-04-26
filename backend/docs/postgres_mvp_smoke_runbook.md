@@ -214,18 +214,16 @@ Use this only when local isolated path is unavailable and only against explicitl
 
 ## What the helper does (5 steps)
 1. Runs persistence entrypoint: `python -m app.persistence`.
-2. Runs both opt-in integration test files in one pytest invocation:
-   `pytest -q tests/test_postgres_slice1_process_env_async.py tests/test_postgres_migration_ledger_integration.py`.
-3. Runs retention helper in dry-run-only path:
+2. Runs retention helper in dry-run-only path:
    `python scripts/run_slice1_retention_dry_run.py`.
    This retention helper dry-run now includes operational checks for:
    - expired `telegram_update_dedup` rows (`expires_at <= now()`);
    - aged `adm02_ensure_access_audit_events` rows (`created_at` older than configured retention window).
    Canonical smoke still does not perform retention deletes.
-4. Runs operator billing ingest/apply e2e smoke with synthetic data:
+3. Runs operator billing ingest/apply e2e smoke with synthetic data:
    `python scripts/check_operator_billing_ingest_apply_e2e.py`.
    This includes duplicate replay and idempotent apply checks.
-5. Runs access fulfillment e2e smoke with synthetic data:
+4. Runs access fulfillment e2e smoke with synthetic data:
    `python scripts/check_postgres_mvp_access_fulfillment_e2e.py`.
    This validates synthetic Telegram identity -> billing ingest/apply activated subscription
    -> Telegram `/status` (active + access not ready) -> ADM-01 support readiness (active + access not ready)
@@ -233,6 +231,8 @@ Use this only when local isolated path is unavailable and only against explicitl
    -> Telegram `/status` (active + access ready)
    -> ADM-01 support readiness (active + access ready)
    -> Telegram `/get_access` safe accepted response, followed by cleanup.
+5. Runs both opt-in integration test files in one pytest invocation:
+   `pytest -q tests/test_postgres_slice1_process_env_async.py tests/test_postgres_migration_ledger_integration.py`.
 
 ## Expected side effects
 - Helper enables PostgreSQL repos via `SLICE1_USE_POSTGRES_REPOS=1`.

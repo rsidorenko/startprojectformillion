@@ -73,15 +73,15 @@ def test_runs_five_commands_in_order_and_sets_expected_env(monkeypatch: pytest.M
 
     assert len(recorded_calls) == 5
     assert recorded_calls[0][0][0] == ["python", "-m", "app.persistence"]
-    assert recorded_calls[1][0][0] == [
+    assert recorded_calls[1][0][0] == ["python", "scripts/run_slice1_retention_dry_run.py"]
+    assert recorded_calls[2][0][0] == ["python", "scripts/check_operator_billing_ingest_apply_e2e.py"]
+    assert recorded_calls[3][0][0] == ["python", "scripts/check_postgres_mvp_access_fulfillment_e2e.py"]
+    assert recorded_calls[4][0][0] == [
         "pytest",
         "-q",
         "tests/test_postgres_slice1_process_env_async.py",
         "tests/test_postgres_migration_ledger_integration.py",
     ]
-    assert recorded_calls[2][0][0] == ["python", "scripts/run_slice1_retention_dry_run.py"]
-    assert recorded_calls[3][0][0] == ["python", "scripts/check_operator_billing_ingest_apply_e2e.py"]
-    assert recorded_calls[4][0][0] == ["python", "scripts/check_postgres_mvp_access_fulfillment_e2e.py"]
     assert recorded_calls[0][1]["check"] is True
     assert recorded_calls[1][1]["check"] is True
     assert recorded_calls[2][1]["check"] is True
@@ -275,12 +275,12 @@ def test_truthy_opt_in_values_allow_run(monkeypatch: pytest.MonkeyPatch, truthy_
 
     assert len(recorded_calls) == 5
     assert recorded_calls[0][0][0] == ["python", "-m", "app.persistence"]
-    assert recorded_calls[1][0][0] == [
+    assert recorded_calls[1][0][0] == ["python", "scripts/run_slice1_retention_dry_run.py"]
+    assert recorded_calls[2][0][0] == ["python", "scripts/check_operator_billing_ingest_apply_e2e.py"]
+    assert recorded_calls[3][0][0] == ["python", "scripts/check_postgres_mvp_access_fulfillment_e2e.py"]
+    assert recorded_calls[4][0][0] == [
         "pytest",
         "-q",
         "tests/test_postgres_slice1_process_env_async.py",
         "tests/test_postgres_migration_ledger_integration.py",
     ]
-    assert recorded_calls[2][0][0] == ["python", "scripts/run_slice1_retention_dry_run.py"]
-    assert recorded_calls[3][0][0] == ["python", "scripts/check_operator_billing_ingest_apply_e2e.py"]
-    assert recorded_calls[4][0][0] == ["python", "scripts/check_postgres_mvp_access_fulfillment_e2e.py"]

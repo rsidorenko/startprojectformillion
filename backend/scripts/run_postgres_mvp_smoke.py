@@ -58,17 +58,6 @@ def main() -> None:
         check=True,
     )
     subprocess.run(
-        [
-            "pytest",
-            "-q",
-            "tests/test_postgres_slice1_process_env_async.py",
-            "tests/test_postgres_migration_ledger_integration.py",
-        ],
-        cwd=backend_dir,
-        env=child_env,
-        check=True,
-    )
-    subprocess.run(
         ["python", "scripts/run_slice1_retention_dry_run.py"],
         cwd=backend_dir,
         env=child_env,
@@ -82,6 +71,17 @@ def main() -> None:
     )
     subprocess.run(
         ["python", "scripts/check_postgres_mvp_access_fulfillment_e2e.py"],
+        cwd=backend_dir,
+        env=child_env,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "pytest",
+            "-q",
+            "tests/test_postgres_slice1_process_env_async.py",
+            "tests/test_postgres_migration_ledger_integration.py",
+        ],
         cwd=backend_dir,
         env=child_env,
         check=True,
