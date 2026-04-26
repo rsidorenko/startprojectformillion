@@ -8,6 +8,9 @@ from dataclasses import fields
 import pytest
 
 from app.application.bootstrap import Slice1Composition, build_slice1_composition
+from app.application.telegram_update_dedup import (
+    InMemoryTelegramUpdateDedupGuard,
+)
 from app.application.handlers import BootstrapIdentityInput, GetSubscriptionStatusInput
 from app.application.telegram_access_resend import TelegramAccessResendInput, TelegramAccessResendOutcome
 from app.application.interfaces import SubscriptionSnapshot
@@ -144,6 +147,7 @@ def test_composition_has_no_extra_service_surface() -> None:
             "snapshots",
             "outbound_delivery",
             "access_resend",
+            "telegram_update_dedup",
         },
     )
     for name in allowed:
@@ -265,3 +269,19 @@ def test_access_resend_env_enable_true_values(monkeypatch: pytest.MonkeyPatch) -
             assert out.outcome is TelegramAccessResendOutcome.NOT_ELIGIBLE
 
     _run(main())
+
+
+def test_composition_has_default_in_memory_update_dedup_guard() -> None:
+    c = build_slice1_composition()
+    assert isinstance(c.telegram_update_dedup, InMemoryTelegramUpdateDedupGuard)
+
+
+def test_composition_accepts_injected_update_dedup_guard() -> None:
+    class _AllowAllDedup:
+        async def mark_if_first_seen(self, *, command_bucket: str, telegram_update_id: int) -> bool:
+            _ = (command_bucket, telegram_update_id)
+            return True
+
+    dedup = _AllowAllDedup()
+    c = build_slice1_composition(telegram_update_dedup=dedup)
+    assert c.telegram_update_dedup is dedup

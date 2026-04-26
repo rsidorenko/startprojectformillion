@@ -16,6 +16,10 @@ from app.application.telegram_access_resend import (
     TelegramAccessResendHandler,
     telegram_access_resend_enabled_from_env,
 )
+from app.application.telegram_update_dedup import (
+    InMemoryTelegramUpdateDedupGuard,
+    TelegramUpdateDedupGuard,
+)
 from app.application.interfaces import (
     AuditAppender,
     IdempotencyRepository,
@@ -47,6 +51,7 @@ class Slice1Composition:
     snapshots: SubscriptionSnapshotReader
     outbound_delivery: OutboundDeliveryLedger
     access_resend: TelegramAccessResendHandler
+    telegram_update_dedup: TelegramUpdateDedupGuard
 
 
 def build_slice1_composition(
@@ -62,6 +67,7 @@ def build_slice1_composition(
     resend_cooldown: AccessResendCooldownStore | None = None,
     resend_disabled_hit_marker: TelegramAccessResendDisabledHitMarker | None = None,
     access_resend_enabled: bool | None = None,
+    telegram_update_dedup: TelegramUpdateDedupGuard | None = None,
 ) -> Slice1Composition:
     if (identity is None) ^ (idempotency is None):
         raise ValueError("identity and idempotency must both be provided or both omitted")
@@ -81,6 +87,7 @@ def build_slice1_composition(
     snapshot_writer = cast(SubscriptionSnapshotWriter, snapshots)
     delivery = outbound_delivery or InMemoryOutboundDeliveryLedger()
     cooldown = resend_cooldown or InMemoryAccessResendCooldownStore()
+    dedup = telegram_update_dedup or InMemoryTelegramUpdateDedupGuard()
     enabled = (
         access_resend_enabled
         if access_resend_enabled is not None
@@ -103,4 +110,5 @@ def build_slice1_composition(
             disabled_hit_marker=resend_disabled_hit_marker,
             enabled=enabled,
         ),
+        telegram_update_dedup=dedup,
     )

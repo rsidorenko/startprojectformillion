@@ -17,6 +17,7 @@ from app.persistence.postgres_issuance_state import PostgresIssuanceStateReposit
 from app.persistence.issuance_state_record import IssuanceStatePersistence
 from app.persistence.postgres_outbound_delivery import PostgresOutboundDeliveryLedger
 from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
+from app.persistence.postgres_telegram_update_dedup import PostgresTelegramUpdateDedupGuard
 from app.persistence.postgres_user_identity import PostgresUserIdentityRepository
 from app.security.config import ConfigurationError, RuntimeConfig
 
@@ -79,5 +80,6 @@ async def resolve_slice1_composition_for_runtime(
         snapshots=PostgresSubscriptionSnapshotReader(pool),
         audit=PostgresAuditAppender(pool),
         outbound_delivery=PostgresOutboundDeliveryLedger(pool),
+        telegram_update_dedup=PostgresTelegramUpdateDedupGuard(pool),
     )
     return composition, pool

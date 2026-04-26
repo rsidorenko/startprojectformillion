@@ -37,6 +37,7 @@ from app.persistence.in_memory import (
 from app.persistence.postgres_audit import PostgresAuditAppender
 from app.persistence.postgres_idempotency import PostgresIdempotencyRepository
 from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
+from app.persistence.postgres_telegram_update_dedup import PostgresTelegramUpdateDedupGuard
 from app.persistence.postgres_user_identity import PostgresUserIdentityRepository
 from app.persistence.billing_ingestion_audit_contracts import (
     BILLING_INGESTION_AUDIT_OPERATION,
@@ -80,6 +81,7 @@ __all__ = [
     "PostgresAuditAppender",
     "PostgresIdempotencyRepository",
     "PostgresSubscriptionSnapshotReader",
+    "PostgresTelegramUpdateDedupGuard",
     "PostgresUserIdentityRepository",
     "PostgresBillingEventsLedgerRepository",
     "BillingEventAmountCurrency",

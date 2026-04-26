@@ -17,7 +17,9 @@ from app.persistence.postgres_audit import PostgresAuditAppender
 from app.persistence.postgres_idempotency import PostgresIdempotencyRepository
 from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
 from app.persistence.postgres_outbound_delivery import PostgresOutboundDeliveryLedger
+from app.persistence.postgres_telegram_update_dedup import PostgresTelegramUpdateDedupGuard
 from app.persistence.postgres_user_identity import PostgresUserIdentityRepository
+from app.application.telegram_update_dedup import InMemoryTelegramUpdateDedupGuard
 from app.persistence.slice1_postgres_wiring import (
     resolve_slice1_composition_for_runtime,
     slice1_postgres_repos_requested,
@@ -77,6 +79,7 @@ def test_resolve_without_flag_uses_in_memory(monkeypatch: pytest.MonkeyPatch) ->
         assert isinstance(composition.snapshots, InMemorySubscriptionSnapshotReader)
         assert isinstance(composition.audit, InMemoryAuditAppender)
         assert isinstance(composition.outbound_delivery, InMemoryOutboundDeliveryLedger)
+        assert isinstance(composition.telegram_update_dedup, InMemoryTelegramUpdateDedupGuard)
 
     asyncio.run(main())
 
@@ -98,6 +101,7 @@ def test_resolve_with_flag_and_pool_uses_postgres_repos(monkeypatch: pytest.Monk
         assert isinstance(composition.snapshots, PostgresSubscriptionSnapshotReader)
         assert isinstance(composition.audit, PostgresAuditAppender)
         assert isinstance(composition.outbound_delivery, PostgresOutboundDeliveryLedger)
+        assert isinstance(composition.telegram_update_dedup, PostgresTelegramUpdateDedupGuard)
 
     asyncio.run(main())
 

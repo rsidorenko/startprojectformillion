@@ -49,6 +49,8 @@ def test_sorted_migration_sql_paths_repo_migrations_order() -> None:
         "009_billing_ingestion_audit_events.sql",
         "010_billing_subscription_apply.sql",
         "011_issuance_state.sql",
+        "012_adm02_ensure_access_audit_events.sql",
+        "013_telegram_update_dedup.sql",
     ]
 
 
@@ -259,3 +261,37 @@ def test_sorted_migration_sql_paths_rejects_non_directory(tmp_path: Path) -> Non
     file_path.write_text("--", encoding="utf-8")
     with pytest.raises(NotADirectoryError):
         pm.sorted_migration_sql_paths(file_path)
+
+
+def test_telegram_update_dedup_migration_uses_only_safe_bounded_columns() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "013_telegram_update_dedup.sql"
+    ).read_text(encoding="utf-8")
+    lowered = migration.lower()
+    for required in (
+        "dedup_key_hash",
+        "command_bucket",
+        "first_seen_at",
+        "expires_at",
+    ):
+        assert required in lowered
+    for forbidden in (
+        "telegram_user_id",
+        "telegram_update_id",
+        "chat_id",
+        "message_text",
+        "payload",
+        "jsonb",
+        "bytea",
+        "internal_user_id",
+        "provider_issuance_ref",
+        "issue_idempotency_key",
+        "provider_ref",
+        "customer_ref",
+        "checkout_attempt_id",
+        "schema_version",
+        "token",
+    ):
+        assert forbidden not in lowered
