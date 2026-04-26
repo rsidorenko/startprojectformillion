@@ -186,8 +186,14 @@ class PostgresBillingEventsLedgerRepository(BillingEventsLedgerRepository):
     async def append_or_get_in_connection(
         conn: asyncpg.Connection,
         record: BillingEventLedgerRecord,
-    ) -> BillingEventLedgerRecord:
-        """Idempotent insert/select using *conn*; caller must scope transaction/rollback (e.g. one txn with audit)."""
+    ) -> tuple[BillingEventLedgerRecord, bool]:
+        """Idempotent insert/select using *conn*; caller must scope transaction/rollback (e.g. one txn with audit).
+
+        Returns ``(ledger_record, inserted_new)`` where ``inserted_new`` is ``True`` iff the INSERT
+        returned a row (fresh fact). When the unique key ``(billing_provider_key, external_event_id)``
+        already exists, INSERT yields no row and the prior row is selected — then ``inserted_new`` is
+        ``False`` (idempotent replay path), even if the caller supplied the same ``internal_fact_ref``.
+        """
         params = PostgresBillingEventsLedgerRepository._insert_params(record)
         try:
             ins = await conn.fetchrow(
@@ -195,7 +201,7 @@ class PostgresBillingEventsLedgerRepository(BillingEventsLedgerRepository):
                 *params,
             )
             if ins is not None:
-                return _row_to_record(ins)
+                return (_row_to_record(ins), True)
             cur = await conn.fetchrow(
                 PostgresBillingEventsLedgerRepository._SELECT_BY_PROVIDER_EXTERNAL,
                 record.billing_provider_key,
@@ -205,7 +211,7 @@ class PostgresBillingEventsLedgerRepository(BillingEventsLedgerRepository):
             raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
         if cur is None:
             raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_INVARIANT)
-        return _row_to_record(cur)
+        return (_row_to_record(cur), False)
 
     @staticmethod
     async def get_by_internal_fact_ref_in_connection(

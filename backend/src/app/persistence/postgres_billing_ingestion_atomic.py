@@ -40,11 +40,11 @@ class PostgresAtomicBillingIngestion:
         try:
             async with self._pool.acquire() as conn:
                 async with conn.transaction():
-                    stored = await PostgresBillingEventsLedgerRepository.append_or_get_in_connection(
+                    stored, inserted_new = await PostgresBillingEventsLedgerRepository.append_or_get_in_connection(
                         conn,
                         constructed,
                     )
-                    is_replay = stored.internal_fact_ref != constructed.internal_fact_ref
+                    is_replay = not inserted_new
                     audit_outcome = (
                         BILLING_INGESTION_OUTCOME_IDEMPOTENT_REPLAY
                         if is_replay

@@ -108,11 +108,10 @@ class NormalizedBillingFactInput:
 class IngestNormalizedBillingFactResult:
     record: BillingEventLedgerRecord
     is_idempotent_replay: bool
-    """True when a prior fact for the same (provider, external_event_id) was already stored.
+    """True when ingest hit an existing (provider, external_event_id) ledger row (replay path).
 
-    Best-effort: when a caller supplies the same internal_fact_ref on a replay and the returned
-    record matches the constructed one field-for-field, this is False.
-    See tests for the common auto-generated ref duplicate path.
+    Postgres atomic ingest detects replay from the INSERT idempotency outcome, so this is True
+    even when the caller repeats the same explicit ``internal_fact_ref`` for that external id.
     """
 
 
