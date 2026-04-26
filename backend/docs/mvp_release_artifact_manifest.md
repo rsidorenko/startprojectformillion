@@ -1,0 +1,67 @@
+# MVP Release Artifact Manifest
+
+Short operator/reviewer checklist for MVP release package completeness.
+
+Final handoff status snapshot: `backend/RELEASE_STATUS.md`.
+
+## Release readiness commands
+- `python scripts/run_mvp_release_readiness.py`
+- Default local/CI baseline static check: `python scripts/run_mvp_repo_release_health_check.py`
+- Final static handoff-only check before transfer: `python scripts/run_mvp_final_static_handoff_check.py` (includes `tests/test_mvp_release_readiness_workflow_structure_contract.py`; remains static/handoff-only and does not run Docker/DB/runtime)
+- Optional bounded handoff summary (read-only): `python scripts/print_mvp_release_handoff_summary.py`
+- `python scripts/run_mvp_release_checklist.py`
+- `python scripts/run_mvp_release_preflight.py`
+- `python scripts/run_mvp_config_doctor.py --profile polling|webhook|internal-admin|retention|all`
+- `python scripts/run_postgres_mvp_smoke_local.py`
+
+The static repository health check is read-only, does not run tests, Docker, DB, or network calls, and complements checklist/preflight/config doctor.
+The final static handoff check is static/handoff-only and does not replace readiness/preflight/config doctor/local smoke.
+The optional handoff summary command is read-only and informational; it does not replace readiness/preflight/config doctor/local smoke.
+Release helper scripts are additionally covered by a bounded-output safety contract test.
+Final MVP release package completeness is covered by `tests/test_mvp_release_package_complete_contract.py`.
+Final release gate contract target: `tests/test_mvp_final_release_gate_contract.py`.
+Workflow structure contract target: `tests/test_mvp_release_readiness_workflow_structure_contract.py`.
+
+## Canonical smoke commands
+- `python scripts/run_postgres_mvp_smoke.py`
+- Local Docker wrapper command remains separate: `python scripts/run_postgres_mvp_smoke_local.py`
+
+## CI gates
+- `backend-mvp-release-readiness`: static repo health check + static checklist + targeted preflight contracts + config doctor unit tests.
+  - Trigger scope includes root `PROJECT_HANDOFF.md` and backend release/handoff docs/scripts/tests.
+- `backend-postgres-mvp-smoke-validation`: canonical PostgreSQL smoke gate and PostgreSQL integration evidence lane.
+
+## Runtime surfaces
+- Telegram polling runtime lane.
+- Telegram webhook ASGI entrypoint.
+- `/healthz` liveness endpoint.
+- `/readyz` readiness endpoint.
+- ADM-01 diagnostics surface.
+- ADM-02 ensure-access remediation path.
+- ADM-02 audit readback path.
+
+## Security toggles (names only)
+- `TELEGRAM_WEBHOOK_SECRET_TOKEN`
+- `TELEGRAM_WEBHOOK_ALLOW_INSECURE_LOCAL`
+- `ADM02_ENSURE_ACCESS_ENABLE`
+- `OPERATIONAL_RETENTION_DELETE_ENABLE`
+- `ADM02_AUDIT_RETENTION_DAYS`
+- `DATABASE_URL`
+- `BOT_TOKEN`
+
+## Known manual gates
+- Real operator config doctor run with actual environment.
+- Local Docker smoke execution.
+- Live deployment `/healthz` and `/readyz` verification.
+- Telegram webhook secret rotation and `setWebhook` operations.
+- Retention delete approval gate before enabling delete path.
+
+## Cross-reference
+- Readiness runbook: `backend/docs/mvp_release_readiness_runbook.md`
+- CI trigger decision note: `backend/docs/mvp_release_ci_trigger_decision.md`
+
+## Explicit out-of-scope
+- public billing ingress
+- real provider SDK
+- raw credential/config delivery
+- full production SLO/alerting certification
