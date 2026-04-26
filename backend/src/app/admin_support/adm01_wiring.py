@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from starlette.applications import Starlette
 
 from app.admin_support.adm01_internal_http import create_adm01_internal_http_app
+from app.admin_support.adm01_identity_resolve_adapter import Adm01IdentityResolveAdapter
 from app.admin_support.adm01_lookup import Adm01LookupHandler
 from app.admin_support.adm01_postgres_issuance_read_adapter import Adm01PostgresIssuanceReadAdapter
 from app.admin_support.adm01_postgres_subscription_read_adapter import (
@@ -30,6 +31,7 @@ from app.admin_support.contracts import (
 from app.admin_support.principal_extraction import DefaultInternalAdminPrincipalExtractor
 from app.persistence.postgres_issuance_state import PostgresIssuanceStateRepository
 from app.persistence.postgres_subscription_snapshot import PostgresSubscriptionSnapshotReader
+from app.persistence.postgres_user_identity import PostgresUserIdentityRepository
 
 
 def build_adm01_issuance_read_from_postgres_issuance_state(
@@ -58,6 +60,12 @@ def build_adm01_policy_read_from_postgres_snapshots(
 ) -> Adm01PolicyReadPort:
     """:class:`Adm01SubscriptionPolicyReadAdapter` derives ADM-01 policy from snapshots."""
     return Adm01SubscriptionPolicyReadAdapter(snapshots)
+
+
+def build_adm01_identity_resolve_from_postgres_user_identities(
+    identities: PostgresUserIdentityRepository,
+) -> Adm01IdentityResolvePort:
+    return Adm01IdentityResolveAdapter(identities)
 
 
 def build_adm01_lookup_handler(

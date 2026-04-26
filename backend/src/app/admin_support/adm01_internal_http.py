@@ -30,11 +30,10 @@ def adm01_endpoint_response_to_jsonable(resp: Adm01EndpointResponse) -> dict[str
     if resp.summary is not None:
         s = resp.summary
         out["summary"] = {
-            "internal_user_id": s.internal_user_id,
-            "subscription_state_label": s.subscription_state_label,
-            "entitlement_category": s.entitlement_category,
-            "policy_flag": s.policy_flag,
-            "issuance_state": s.issuance_state,
+            "telegram_identity_known": s.telegram_identity_known,
+            "subscription_bucket": s.subscription_bucket,
+            "access_readiness_bucket": s.access_readiness_bucket,
+            "recommended_next_action": s.recommended_next_action,
             "redaction": s.redaction,
         }
     return out

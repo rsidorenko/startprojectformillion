@@ -12,6 +12,8 @@ from app.admin_support.contracts import (
     Adm01LookupInput,
     Adm01LookupOutcome,
     Adm01LookupSummary,
+    Adm01SupportAccessReadinessBucket,
+    Adm01SupportNextAction,
     Adm01SubscriptionStatusSummary,
     EntitlementSummary,
     EntitlementSummaryCategory,
@@ -105,6 +107,11 @@ class _PolicyRaise:
         raise RuntimeError("policy failed")
 
 
+class _IssuanceRaise:
+    async def get_issuance_summary(self, internal_user_id: str):
+        raise RuntimeError("issuance failed")
+
+
 class _RedactionPartial:
     """Returns a redacted copy; asserts handler assembled summary first."""
 
@@ -159,6 +166,15 @@ def test_adm01_lookup_success() -> None:
         assert r.summary.subscription.snapshot.state_label == "inactive"
         assert r.summary.entitlement.category is EntitlementSummaryCategory.ACTIVE
         assert r.summary.policy_flag is AdminPolicyFlag.ENFORCE_MANUAL_REVIEW
+        assert r.summary.support_readiness.telegram_identity_known is True
+        assert (
+            r.summary.support_readiness.access_readiness_bucket
+            is Adm01SupportAccessReadinessBucket.NOT_APPLICABLE_NO_ACTIVE_SUBSCRIPTION
+        )
+        assert (
+            r.summary.support_readiness.recommended_next_action
+            is Adm01SupportNextAction.INVESTIGATE_BILLING_APPLY
+        )
         assert reads.calls == ["sub", "ent", "iss"]
         assert policy.calls == ["policy"]
 
@@ -193,8 +209,10 @@ def test_adm01_lookup_target_not_resolved() -> None:
             policy=_Policy(),
         )
         r = await h.handle(_inp(TelegramUserTarget(telegram_user_id=99)))
-        assert r.outcome is Adm01LookupOutcome.TARGET_NOT_RESOLVED
-        assert r.summary is None
+        assert r.outcome is Adm01LookupOutcome.SUCCESS
+        assert r.summary is not None
+        assert r.summary.support_readiness.telegram_identity_known is False
+        assert r.summary.support_readiness.recommended_next_action is Adm01SupportNextAction.ASK_USER_TO_USE_STATUS
 
     _run(main())
 
@@ -336,9 +354,111 @@ def test_adm01_lookup_policy_exception_dependency_failure_redaction_skipped() ->
             redaction=redaction,
         )
         r = await h.handle(_inp(InternalUserTarget(internal_user_id="u-1")))
-        assert r.outcome is Adm01LookupOutcome.DEPENDENCY_FAILURE
-        assert r.summary is None
+        assert r.outcome is Adm01LookupOutcome.SUCCESS
+        assert r.summary is not None
+        assert (
+            r.summary.support_readiness.access_readiness_bucket
+            is Adm01SupportAccessReadinessBucket.UNKNOWN_DUE_TO_INTERNAL_ERROR
+        )
+        assert (
+            r.summary.support_readiness.recommended_next_action
+            is Adm01SupportNextAction.INVESTIGATE_ISSUANCE
+        )
         assert reads.calls == ["sub", "ent", "iss"]
         assert redaction.calls == 0
+
+    _run(main())
+
+
+def test_adm01_lookup_known_user_without_active_subscription_not_applicable() -> None:
+    async def main() -> None:
+        reads = _Reads()
+        policy = _Policy()
+        h = Adm01LookupHandler(
+            authorization=_AuthAllow(True),
+            identity=_Identity("u-1"),
+            subscription=reads,
+            entitlement=reads,
+            issuance=reads,
+            policy=policy,
+            redaction=None,
+        )
+        r = await h.handle(_inp(InternalUserTarget(internal_user_id="u-1")))
+        assert r.outcome is Adm01LookupOutcome.SUCCESS
+        assert r.summary is not None
+        assert r.summary.support_readiness.telegram_identity_known is True
+        assert (
+            r.summary.support_readiness.access_readiness_bucket
+            is Adm01SupportAccessReadinessBucket.NOT_APPLICABLE_NO_ACTIVE_SUBSCRIPTION
+        )
+        assert (
+            r.summary.support_readiness.recommended_next_action
+            is Adm01SupportNextAction.INVESTIGATE_BILLING_APPLY
+        )
+
+    _run(main())
+
+
+def test_adm01_lookup_active_subscription_without_issuance_access_not_ready() -> None:
+    class _ReadsActiveNoIssuance:
+        async def get_subscription_snapshot(self, internal_user_id: str):
+            return SubscriptionSnapshot(internal_user_id=internal_user_id, state_label="active")
+
+        async def get_entitlement_summary(self, internal_user_id: str):
+            return EntitlementSummary(category=EntitlementSummaryCategory.ACTIVE)
+
+        async def get_issuance_summary(self, internal_user_id: str):
+            return IssuanceOperationalSummary(state=IssuanceOperationalState.NONE)
+
+    async def main() -> None:
+        reads = _ReadsActiveNoIssuance()
+        h = Adm01LookupHandler(
+            authorization=_AuthAllow(True),
+            identity=_Identity("u-1"),
+            subscription=reads,
+            entitlement=reads,
+            issuance=reads,
+            policy=_Policy(),
+            redaction=None,
+        )
+        r = await h.handle(_inp(InternalUserTarget(internal_user_id="u-1")))
+        assert r.outcome is Adm01LookupOutcome.SUCCESS
+        assert r.summary is not None
+        assert (
+            r.summary.support_readiness.access_readiness_bucket
+            is Adm01SupportAccessReadinessBucket.ACTIVE_ACCESS_NOT_READY
+        )
+        assert (
+            r.summary.support_readiness.recommended_next_action
+            is Adm01SupportNextAction.INVESTIGATE_ISSUANCE
+        )
+
+    _run(main())
+
+
+def test_adm01_lookup_issuance_failure_maps_to_safe_internal_error_bucket() -> None:
+    async def main() -> None:
+        reads = _Reads()
+        h = Adm01LookupHandler(
+            authorization=_AuthAllow(True),
+            identity=_Identity("u-1"),
+            subscription=reads,
+            entitlement=reads,
+            issuance=_IssuanceRaise(),
+            policy=_Policy(),
+            redaction=None,
+        )
+        r = await h.handle(_inp(InternalUserTarget(internal_user_id="u-1")))
+        assert r.outcome is Adm01LookupOutcome.SUCCESS
+        assert r.summary is not None
+        assert r.summary.support_readiness.telegram_identity_known is True
+        assert (
+            r.summary.support_readiness.access_readiness_bucket
+            is Adm01SupportAccessReadinessBucket.UNKNOWN_DUE_TO_INTERNAL_ERROR
+        )
+        assert (
+            r.summary.support_readiness.recommended_next_action
+            is Adm01SupportNextAction.INVESTIGATE_ISSUANCE
+        )
 
     _run(main())

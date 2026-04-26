@@ -18,6 +18,10 @@ from app.admin_support.contracts import (
     Adm01LookupOutcome,
     Adm01LookupResult,
     Adm01LookupSummary,
+    Adm01SupportAccessReadinessBucket,
+    Adm01SupportNextAction,
+    Adm01SupportReadinessSummary,
+    Adm01SupportSubscriptionBucket,
     Adm01SubscriptionStatusSummary,
     EntitlementSummary,
     EntitlementSummaryCategory,
@@ -48,6 +52,12 @@ def _success_result(cid: str) -> Adm01LookupResult:
             entitlement=EntitlementSummary(category=EntitlementSummaryCategory.ACTIVE),
             policy_flag=AdminPolicyFlag.DEFAULT,
             issuance=IssuanceOperationalSummary(state=IssuanceOperationalState.OK),
+            support_readiness=Adm01SupportReadinessSummary(
+                telegram_identity_known=True,
+                subscription_bucket=Adm01SupportSubscriptionBucket.ACTIVE,
+                access_readiness_bucket=Adm01SupportAccessReadinessBucket.ACTIVE_ACCESS_READY,
+                recommended_next_action=Adm01SupportNextAction.ASK_USER_TO_USE_GET_ACCESS,
+            ),
             redaction=RedactionMarker.NONE,
         ),
     )
@@ -117,11 +127,10 @@ def test_http_happy_path_success_summary() -> None:
         assert body["outcome"] == "success"
         assert body["correlation_id"] == cid
         assert body["summary"] is not None
-        assert body["summary"]["internal_user_id"] == "u-1"
-        assert body["summary"]["subscription_state_label"] == "active"
-        assert body["summary"]["entitlement_category"] == "active"
-        assert body["summary"]["policy_flag"] == "default"
-        assert body["summary"]["issuance_state"] == "ok"
+        assert body["summary"]["telegram_identity_known"] is True
+        assert body["summary"]["subscription_bucket"] == "active"
+        assert body["summary"]["access_readiness_bucket"] == "active_access_ready"
+        assert body["summary"]["recommended_next_action"] == "ask_user_to_use_get_access"
         assert body["summary"]["redaction"] == "none"
 
     _run(main())
@@ -169,6 +178,44 @@ def test_http_both_targets_invalid_input() -> None:
         )
         assert r.status_code == 200
         assert r.json()["outcome"] == "invalid_input"
+
+    _run(main())
+
+
+def test_http_unknown_telegram_user_safe_identity_unknown_response() -> None:
+    cid = new_correlation_id()
+    result = Adm01LookupResult(
+        outcome=Adm01LookupOutcome.SUCCESS,
+        correlation_id=cid,
+        summary=Adm01LookupSummary(
+            subscription=Adm01SubscriptionStatusSummary(snapshot=None),
+            entitlement=EntitlementSummary(category=EntitlementSummaryCategory.UNKNOWN),
+            policy_flag=AdminPolicyFlag.UNKNOWN,
+            issuance=IssuanceOperationalSummary(state=IssuanceOperationalState.UNKNOWN),
+            support_readiness=Adm01SupportReadinessSummary(
+                telegram_identity_known=False,
+                subscription_bucket=Adm01SupportSubscriptionBucket.UNKNOWN,
+                access_readiness_bucket=Adm01SupportAccessReadinessBucket.NOT_APPLICABLE_NO_ACTIVE_SUBSCRIPTION,
+                recommended_next_action=Adm01SupportNextAction.ASK_USER_TO_USE_STATUS,
+            ),
+            redaction=RedactionMarker.NONE,
+        ),
+    )
+
+    async def main() -> None:
+        app = create_adm01_internal_http_app(_RecordingHandler(result), _SuccessExtractor())
+        r = await _post_json(
+            app,
+            {
+                "correlation_id": cid,
+                "internal_admin_principal_id": "adm-1",
+                "telegram_user_id": 424242,
+            },
+        )
+        assert r.status_code == 200
+        summary = r.json()["summary"]
+        assert summary["telegram_identity_known"] is False
+        assert summary["recommended_next_action"] == "ask_user_to_use_status"
 
     _run(main())
 
@@ -277,11 +324,10 @@ def test_http_response_contract_low_cardinality_stable_and_deny_redacted() -> No
     cid_deny = new_correlation_id()
     expected_top_level_keys = {"outcome", "correlation_id", "summary"}
     expected_summary_keys = {
-        "internal_user_id",
-        "subscription_state_label",
-        "entitlement_category",
-        "policy_flag",
-        "issuance_state",
+        "telegram_identity_known",
+        "subscription_bucket",
+        "access_readiness_bucket",
+        "recommended_next_action",
         "redaction",
     }
 
@@ -306,19 +352,10 @@ def test_http_response_contract_low_cardinality_stable_and_deny_redacted() -> No
         assert success_body["summary"] is not None
         summary = success_body["summary"]
         assert set(summary.keys()) == expected_summary_keys
-        assert summary["internal_user_id"] == "u-1"
-
-        # Lock low-cardinality strings for ADM-01 summary boundary.
-        assert summary["subscription_state_label"] in {
-            "active",
-            "inactive",
-            "absent",
-            "not_eligible",
-            "needs_review",
-        }
-        assert summary["entitlement_category"] in {v.value for v in EntitlementSummaryCategory}
-        assert summary["policy_flag"] in {v.value for v in AdminPolicyFlag}
-        assert summary["issuance_state"] in {v.value for v in IssuanceOperationalState}
+        assert summary["telegram_identity_known"] is True
+        assert summary["subscription_bucket"] in {v.value for v in Adm01SupportSubscriptionBucket}
+        assert summary["access_readiness_bucket"] in {v.value for v in Adm01SupportAccessReadinessBucket}
+        assert summary["recommended_next_action"] in {v.value for v in Adm01SupportNextAction}
         assert summary["redaction"] in {v.value for v in RedactionMarker}
 
         app_deny = create_adm01_internal_http_app(
@@ -355,6 +392,14 @@ def test_http_response_contract_low_cardinality_stable_and_deny_redacted() -> No
         forbidden_fragments = (
             "provider_issuance_ref",
             "issue_idempotency_key",
+            "internal_user_id",
+            "checkout_attempt_id",
+            "customer_ref",
+            "provider_ref",
+            "schema_version",
+            "BEGIN ",
+            "token=",
+            "vpn://",
             "internal_fact_ref",
             "external_event_id",
             "DATABASE_URL",

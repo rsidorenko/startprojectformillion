@@ -106,11 +106,10 @@ def test_adm01_composition_happy_path_real_chain() -> None:
         )
         assert response.outcome == "success"
         assert response.summary is not None
-        assert response.summary.internal_user_id == "u-777"
-        assert response.summary.subscription_state_label == "active"
-        assert response.summary.entitlement_category == "active"
-        assert response.summary.policy_flag == "default"
-        assert response.summary.issuance_state == "ok"
+        assert response.summary.telegram_identity_known is True
+        assert response.summary.subscription_bucket == "active"
+        assert response.summary.access_readiness_bucket == "active_access_ready"
+        assert response.summary.recommended_next_action == "ask_user_to_use_get_access"
         assert response.summary.redaction == "none"
         assert identity.calls == 1
         assert identity.last_target == InternalUserTarget(internal_user_id="u-input")

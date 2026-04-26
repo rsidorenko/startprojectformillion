@@ -1,5 +1,8 @@
 # Admin/support internal read gate (ADM-01 / ADM-02)
 
+Release go/no-go flow reference:
+- `backend/docs/mvp_release_readiness_runbook.md`
+
 ## Purpose
 
 **Advisory operator preflight:** fast, in-process checks that the internal Starlette bridges for **ADM-01** and **ADM-02** still enforce allowlists, principal extraction, and safe JSON shapes. Use after refactors touching `app.admin_support` or internal HTTP wiring.
@@ -55,6 +58,91 @@ On enabled-mode failure, stderr categories are fixed and intentionally low-detai
 - **No external database:** does not read `DATABASE_URL`, does not open TCP to PostgreSQL, no Docker, no migrations.
 - **No Telegram** or billing/config issuance paths.
 - **ADM-02 success path:** uses the real `Adm02DiagnosticsHandler` stack with in-memory repositories; a successful diagnostics call may append a **fact-of-access record to the in-memory audit appender** (same handler semantics as in unit tests). Nothing is written to a real production database by this script.
+
+## ADM-01 support readiness read model
+
+Use the existing internal ADM-01 lookup path to triage Telegram access readiness for support/admin:
+
+- Internal path: `POST /internal/admin/adm01/lookup` (same allowlist/internal principal gate as before).
+- Input target: `telegram_user_id` (or `internal_user_id` where existing internal process already has it).
+- Safe summary fields:
+  - `telegram_identity_known`
+  - `subscription_bucket` (`unknown|inactive|active|expired|cancelled`)
+  - `access_readiness_bucket` (`not_applicable_no_active_subscription|active_access_not_ready|active_access_ready|unknown_due_to_internal_error`)
+  - `recommended_next_action` (`ask_user_to_use_status|ask_user_to_use_get_access|investigate_billing_apply|investigate_issuance`)
+
+Operator guidance:
+
+- `ask_user_to_use_status`: confirm user-facing state via `/status`.
+- `ask_user_to_use_get_access`: user should run `/get_access`.
+- `investigate_billing_apply`: check billing ingestion/apply path.
+- `investigate_issuance`: check issuance/readiness path.
+
+Safety boundary:
+
+- ADM-01 response is deterministic/minimal and does not return raw credentials, raw config, provider refs, billing refs, idempotency keys, DB ids, or internal user ids.
+- `/status` and `/get_access` remain the user-facing commands.
+- Canonical PostgreSQL MVP access fulfillment smoke also verifies ADM-01 readiness alignment with user-facing `/status` before and after fake issuance.
+
+## ADM-02 support remediation (ensure access)
+
+- ADM-01 remains read-only diagnostics.
+- ADM-02 ensure-access is internal remediation for cases where identity is known, subscription is active, and access is not ready.
+- Expected safe outcomes are bounded (`noop_identity_unknown`, `noop_no_active_subscription`, `noop_access_already_ready`, `issued_access`, `failed_safe`) and deterministic.
+- ADM-02 ensure-access mutation attempts emit safe internal audit evidence with bounded buckets:
+  - `denied_unauthorized`
+  - `denied_mutation_opt_in_disabled`
+  - `noop_identity_unknown`
+  - `noop_no_active_subscription`
+  - `noop_access_already_ready`
+  - `issued_access`
+  - `failed_safe`
+- In internal admin runtime, ADM-02 ensure-access now writes redacted audit events to
+  durable PostgreSQL storage (`adm02_ensure_access_audit_events`) and also emits structured logs
+  as observability signal/fallback.
+- Mutation path is fail-closed:
+  - allowlist gate must pass for ADM-02 capability;
+  - explicit mutation opt-in must be enabled by composition/runtime (no default global enablement);
+  - runtime gate is env/config-driven via `ADM02_ENSURE_ACCESS_ENABLE` (`1|true|yes` after `strip().lower()`).
+- Missing/falsey `ADM02_ENSURE_ACCESS_ENABLE` keeps ADM-02 ensure-access mutation disabled while ADM-01 diagnostics remain available.
+- ADM-02 durable ensure-access audit evidence is available on internal admin read path:
+  - lookup by exact `evidence_correlation_id`;
+  - recent bounded list via `limit` (safe default and hard max enforced).
+- Audit evidence read path is internal/admin gated and strictly read-only.
+- Mutation opt-in (`ADM02_ENSURE_ACCESS_ENABLE`) is still only for ensure-access remediation route, not for audit evidence readback.
+- Remediation is idempotent: repeated ensure-access calls for the same active user must not create duplicate issuance state.
+- No raw credentials/config/provider refs/billing refs/idempotency keys/internal user IDs are returned.
+- Ensure-access audit evidence is redacted and bounded; it does not include raw credentials/config/provider refs/billing refs/internal ids/idempotency keys.
+- Runtime audit events intentionally omit raw user identifiers, internal user ids, provider/billing refs,
+  credentials, DSN, and request/response payloads.
+- Audit readback returns only bounded redacted fields from durable storage:
+  `created_at`, `event_type`, `outcome_bucket`, `remediation_result`, `readiness_bucket`,
+  `principal_marker`, `correlation_id`, optional `source_marker`.
+- Audit readback does not return raw credentials/config material, provider refs, billing refs,
+  internal user ids, DB ids, idempotency keys, tokens, or DSN.
+- Durable ADM-02 audit table stores bounded fields only:
+  - `event_type`
+  - `outcome_bucket` (`denied_unauthorized|denied_mutation_opt_in_disabled|noop_identity_unknown|noop_no_active_subscription|noop_access_already_ready|issued_access|failed_safe|dependency_failure|invalid_input`)
+  - `remediation_result`
+  - `readiness_bucket`
+  - `principal_marker`
+  - `correlation_id`
+  - optional `source_marker`
+- Durable ADM-02 audit storage does not store raw credentials/config material, provider refs, billing refs,
+  DB ids, internal user ids, idempotency keys, tokens, DSN, or request/response payloads.
+- Retention/export: follow existing Postgres retention/export operational process; ADM-02 audit rows are
+  bounded operational evidence and should be handled with the same internal redaction/export controls.
+- Operational retention cleanup now includes `adm02_ensure_access_audit_events` age-based retention with
+  configurable `ADM02_AUDIT_RETENTION_DAYS` (default conservative value) and dry-run-first behavior.
+- Deletion is opt-in only via `OPERATIONAL_RETENTION_DELETE_ENABLE` (`1|true|yes` after `strip().lower()`).
+  Without this explicit flag, operational retention runs counts-only and does not delete ADM-02 audit rows.
+- User-facing commands remain `/status` and `/get_access`; support remediation does not expose new public bot commands.
+- Canonical PostgreSQL MVP access fulfillment smoke also exercises ADM-02 remediation when explicitly enabled in isolated smoke child env (`ADM02_ENSURE_ACCESS_ENABLE=1`), without enabling ADM-02 globally.
+- Operator troubleshooting flow: use ADM-01 for diagnostics, ADM-02 for gated remediation, and ADM-02 audit evidence for outcome traceability.
+- Canonical PostgreSQL MVP access fulfillment smoke validates ADM-02 audit evidence for both
+  `issued_access` and idempotent `noop_access_already_ready` outcomes.
+- Canonical PostgreSQL MVP access fulfillment smoke now verifies durable ADM-02 audit
+  persistence/readback via internal read-only audit lookup scoped by smoke correlation id.
 
 ## Prerequisites
 

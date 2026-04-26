@@ -15,6 +15,10 @@ from app.admin_support.contracts import (
     Adm01LookupOutcome,
     Adm01LookupResult,
     Adm01LookupSummary,
+    Adm01SupportAccessReadinessBucket,
+    Adm01SupportNextAction,
+    Adm01SupportReadinessSummary,
+    Adm01SupportSubscriptionBucket,
     Adm01SubscriptionStatusSummary,
     EntitlementSummary,
     EntitlementSummaryCategory,
@@ -70,6 +74,12 @@ def _success_result(cid: str) -> Adm01LookupResult:
             entitlement=EntitlementSummary(category=EntitlementSummaryCategory.ACTIVE),
             policy_flag=AdminPolicyFlag.DEFAULT,
             issuance=IssuanceOperationalSummary(state=IssuanceOperationalState.OK),
+            support_readiness=Adm01SupportReadinessSummary(
+                telegram_identity_known=True,
+                subscription_bucket=Adm01SupportSubscriptionBucket.ACTIVE,
+                access_readiness_bucket=Adm01SupportAccessReadinessBucket.ACTIVE_ACCESS_READY,
+                recommended_next_action=Adm01SupportNextAction.ASK_USER_TO_USE_GET_ACCESS,
+            ),
             redaction=RedactionMarker.NONE,
         ),
     )
@@ -278,7 +288,7 @@ def test_endpoint_internal_user_id_normalized_target() -> None:
         assert h.last_inp.correlation_id == cid
         assert r.outcome == Adm01LookupOutcome.SUCCESS.value
         assert r.summary is not None
-        assert r.summary.subscription_state_label == "active"
+        assert r.summary.subscription_bucket == "active"
 
     _run(main())
 
@@ -327,11 +337,10 @@ def test_endpoint_success_exposes_summary_shape() -> None:
         assert r.correlation_id == cid
         assert r.summary is not None
         s = r.summary
-        assert s.internal_user_id == "u-1"
-        assert s.subscription_state_label == "active"
-        assert s.entitlement_category == EntitlementSummaryCategory.ACTIVE.value
-        assert s.policy_flag == AdminPolicyFlag.DEFAULT.value
-        assert s.issuance_state == IssuanceOperationalState.OK.value
+        assert s.telegram_identity_known is True
+        assert s.subscription_bucket == Adm01SupportSubscriptionBucket.ACTIVE.value
+        assert s.access_readiness_bucket == Adm01SupportAccessReadinessBucket.ACTIVE_ACCESS_READY.value
+        assert s.recommended_next_action == Adm01SupportNextAction.ASK_USER_TO_USE_GET_ACCESS.value
         assert s.redaction == RedactionMarker.NONE.value
 
     _run(main())
@@ -444,11 +453,10 @@ def test_endpoint_response_contract_low_cardinality_stable_and_denied_redacted()
     cid_deny = new_correlation_id()
     expected_top_level_keys = {"outcome", "correlation_id", "summary"}
     expected_summary_keys = {
-        "internal_user_id",
-        "subscription_state_label",
-        "entitlement_category",
-        "policy_flag",
-        "issuance_state",
+        "telegram_identity_known",
+        "subscription_bucket",
+        "access_readiness_bucket",
+        "recommended_next_action",
         "redaction",
     }
 
@@ -468,17 +476,10 @@ def test_endpoint_response_contract_low_cardinality_stable_and_denied_redacted()
         assert summary is not None
         summary_dict = asdict(summary)
         assert set(summary_dict.keys()) == expected_summary_keys
-        assert summary.internal_user_id == "u-1"
-        assert summary.subscription_state_label in {
-            "active",
-            "inactive",
-            "absent",
-            "not_eligible",
-            "needs_review",
-        }
-        assert summary.entitlement_category in {v.value for v in EntitlementSummaryCategory}
-        assert summary.policy_flag in {v.value for v in AdminPolicyFlag}
-        assert summary.issuance_state in {v.value for v in IssuanceOperationalState}
+        assert summary.telegram_identity_known is True
+        assert summary.subscription_bucket in {v.value for v in Adm01SupportSubscriptionBucket}
+        assert summary.access_readiness_bucket in {v.value for v in Adm01SupportAccessReadinessBucket}
+        assert summary.recommended_next_action in {v.value for v in Adm01SupportNextAction}
         assert summary.redaction in {v.value for v in RedactionMarker}
 
         denied_resp = await execute_adm01_endpoint(
@@ -501,6 +502,14 @@ def test_endpoint_response_contract_low_cardinality_stable_and_denied_redacted()
         forbidden_fragments = (
             "provider_issuance_ref",
             "issue_idempotency_key",
+            "internal_user_id",
+            "checkout_attempt_id",
+            "customer_ref",
+            "provider_ref",
+            "schema_version",
+            "BEGIN ",
+            "token=",
+            "vpn://",
             "internal_fact_ref",
             "external_event_id",
             "DATABASE_URL",

@@ -170,8 +170,13 @@ async def run_admin_support_internal_read_gate_checks() -> None:
     summary = body_ok.get("summary")
     if not isinstance(summary, dict):
         raise RuntimeError("adm01 allow scenario summary")
-    if summary.get("internal_user_id") != marker_internal_user:
-        raise RuntimeError("adm01 allow scenario internal user projection")
+    if summary.get("telegram_identity_known") is not True:
+        raise RuntimeError("adm01 allow scenario identity marker")
+    if summary.get("access_readiness_bucket") not in {
+        "active_access_not_ready",
+        "not_applicable_no_active_subscription",
+    }:
+        raise RuntimeError("adm01 allow scenario readiness marker")
     raw = r_allow.text
     if "postgresql://" in raw.lower():
         raise RuntimeError("adm01 allow scenario response url marker")

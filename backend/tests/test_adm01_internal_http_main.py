@@ -5,9 +5,20 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from starlette.applications import Starlette
 
 from app.admin_support.adm01_postgres_subscription_read_adapter import (
     Adm01PostgresSubscriptionReadAdapter,
+)
+from app.admin_support.adm01_internal_http import ADM01_INTERNAL_LOOKUP_PATH
+from app.admin_support.adm02_internal_http import ADM02_INTERNAL_ENSURE_ACCESS_PATH
+from app.admin_support.adm02_internal_http import ADM02_INTERNAL_AUDIT_EVENTS_PATH
+from app.admin_support.adm02_ensure_access_audit_logging import (
+    FanoutAdm02EnsureAccessAuditSink,
+    StructuredLoggingAdm02EnsureAccessAuditSink,
+)
+from app.admin_support.adm02_ensure_access_audit_postgres import (
+    PostgresAdm02EnsureAccessAuditSink,
 )
 from app.admin_support.adm01_subscription_policy_read_adapter import (
     Adm01SubscriptionPolicyReadAdapter,
@@ -17,6 +28,7 @@ from app.admin_support.adm01_subscription_entitlement_read_adapter import (
 )
 from app.internal_admin import adm01_http_main as main_mod
 from app.security.config import RuntimeConfig
+from app.shared.correlation import new_correlation_id
 
 
 class _FakePool:
@@ -274,3 +286,192 @@ async def test_build_app_failure_closes_pool(monkeypatch, capsys) -> None:
     assert r == 1
     assert fake.closed is True
     assert capsys.readouterr().err.strip() == main_mod._STDERR_FAILED
+
+
+@pytest.mark.asyncio
+async def test_adm02_ensure_access_route_not_wired_without_env_opt_in(monkeypatch) -> None:
+    monkeypatch.setenv("ADM01_INTERNAL_HTTP_ENABLE", "1")
+    monkeypatch.setenv("ADM01_INTERNAL_HTTP_ALLOWLIST", "adm-x")
+    monkeypatch.setenv("BOT_TOKEN", "x" * 16)
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/testdb")
+    monkeypatch.delenv("ADM02_ENSURE_ACCESS_ENABLE", raising=False)
+
+    class _FakePool:
+        async def close(self) -> None:
+            return None
+
+    captured_app: Starlette | None = None
+
+    async def _ok_migrations(rt: RuntimeConfig) -> None:
+        return None
+
+    async def _open_pool(dsn: str) -> object:
+        return _FakePool()
+
+    async def _capture_run(app: object, *, host: str, port: int) -> None:
+        del host, port
+        nonlocal captured_app
+        assert isinstance(app, Starlette)
+        captured_app = app
+
+    rc = await main_mod.async_run_adm01_internal_http_from_env(
+        load_runtime=lambda: _runtime_with_dsn(),
+        apply_migrations=_ok_migrations,
+        create_pool=_open_pool,
+        run_uvicorn=_capture_run,
+    )
+    assert rc == 0
+    assert captured_app is not None
+    paths = {route.path for route in captured_app.routes}
+    assert ADM01_INTERNAL_LOOKUP_PATH in paths
+    assert ADM02_INTERNAL_AUDIT_EVENTS_PATH in paths
+    assert ADM02_INTERNAL_ENSURE_ACCESS_PATH not in paths
+
+
+@pytest.mark.asyncio
+async def test_adm02_ensure_access_route_wired_with_env_opt_in_and_unauthorized_denied(monkeypatch) -> None:
+    monkeypatch.setenv("ADM01_INTERNAL_HTTP_ENABLE", "1")
+    monkeypatch.setenv("ADM01_INTERNAL_HTTP_ALLOWLIST", "adm-allow")
+    monkeypatch.setenv("ADM02_ENSURE_ACCESS_ENABLE", "yes")
+    monkeypatch.setenv("BOT_TOKEN", "x" * 16)
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/testdb")
+
+    class _FakePool:
+        async def close(self) -> None:
+            return None
+
+    captured_app: Starlette | None = None
+
+    async def _ok_migrations(rt: RuntimeConfig) -> None:
+        return None
+
+    async def _open_pool(dsn: str) -> object:
+        return _FakePool()
+
+    async def _capture_run(app: object, *, host: str, port: int) -> None:
+        del host, port
+        nonlocal captured_app
+        assert isinstance(app, Starlette)
+        captured_app = app
+
+    rc = await main_mod.async_run_adm01_internal_http_from_env(
+        load_runtime=lambda: _runtime_with_dsn(),
+        apply_migrations=_ok_migrations,
+        create_pool=_open_pool,
+        run_uvicorn=_capture_run,
+    )
+    assert rc == 0
+    assert captured_app is not None
+    paths = {route.path for route in captured_app.routes}
+    assert ADM01_INTERNAL_LOOKUP_PATH in paths
+    assert ADM02_INTERNAL_AUDIT_EVENTS_PATH in paths
+    assert ADM02_INTERNAL_ENSURE_ACCESS_PATH in paths
+
+    ensure_route = next(route for route in captured_app.routes if route.path == ADM02_INTERNAL_ENSURE_ACCESS_PATH)
+    cid = new_correlation_id()
+    dummy_receive = {
+        "type": "http.request",
+        "body": (
+            f'{{"correlation_id":"{cid}",'
+            '"internal_admin_principal_id":"intruder","telegram_user_id":42}'
+        ).encode("utf-8"),
+        "more_body": False,
+    }
+    events: list[dict] = []
+
+    async def _receive() -> dict:
+        return dummy_receive
+
+    async def _send(message: dict) -> None:
+        events.append(message)
+
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "POST",
+        "path": ADM02_INTERNAL_ENSURE_ACCESS_PATH,
+        "raw_path": ADM02_INTERNAL_ENSURE_ACCESS_PATH.encode("utf-8"),
+        "query_string": b"",
+        "headers": [(b"content-type", b"application/json")],
+        "client": ("test", 1234),
+        "server": ("test", 80),
+        "scheme": "http",
+    }
+    await ensure_route.app(scope, _receive, _send)
+    body_bytes = b"".join(evt.get("body", b"") for evt in events if evt["type"] == "http.response.body")
+    text = body_bytes.decode("utf-8")
+    assert '"outcome":"denied"' in text.replace(" ", "")
+    lowered = text.lower()
+    for forbidden in (
+        "database_url",
+        "postgres://",
+        "postgresql://",
+        "bearer ",
+        "private key",
+        "begin ",
+        "token=",
+        "vpn://",
+        "provider_issuance_ref",
+        "issue_idempotency_key",
+        "schema_version",
+        "customer_ref",
+        "provider_ref",
+        "checkout_attempt_id",
+        "internal_user_id",
+    ):
+        assert forbidden not in lowered
+
+
+@pytest.mark.asyncio
+async def test_adm02_opt_in_wires_durable_postgres_with_structured_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("ADM01_INTERNAL_HTTP_ENABLE", "1")
+    monkeypatch.setenv("ADM01_INTERNAL_HTTP_ALLOWLIST", "adm-allow")
+    monkeypatch.setenv("ADM02_ENSURE_ACCESS_ENABLE", "1")
+    monkeypatch.setenv("BOT_TOKEN", "x" * 16)
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/testdb")
+
+    class _FakePool:
+        async def close(self) -> None:
+            return None
+
+    async def _ok_migrations(rt: RuntimeConfig) -> None:
+        return None
+
+    async def _open_pool(dsn: str) -> object:
+        return _FakePool()
+
+    async def _capture_run(app: object, *, host: str, port: int) -> None:
+        del app, host, port
+        return None
+
+    captured: dict[str, object] = {}
+
+    def fake_build_adm02_ensure_access_handler(**kwargs):
+        captured.update(kwargs)
+
+        class _Handler:
+            async def handle(self, inp):
+                _ = inp
+                raise AssertionError("should not be called")
+
+        return _Handler()
+
+    monkeypatch.setattr(main_mod, "build_adm02_ensure_access_handler", fake_build_adm02_ensure_access_handler)
+
+    rc = await main_mod.async_run_adm01_internal_http_from_env(
+        load_runtime=lambda: _runtime_with_dsn(),
+        apply_migrations=_ok_migrations,
+        create_pool=_open_pool,
+        run_uvicorn=_capture_run,
+    )
+    assert rc == 0
+    assert "audit" in captured
+    assert isinstance(captured["audit"], FanoutAdm02EnsureAccessAuditSink)
+    fanout = captured["audit"]
+    sinks = getattr(fanout, "_sinks")
+    assert len(sinks) == 2
+    assert isinstance(sinks[0], PostgresAdm02EnsureAccessAuditSink)
+    assert isinstance(sinks[1], StructuredLoggingAdm02EnsureAccessAuditSink)

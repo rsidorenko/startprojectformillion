@@ -34,11 +34,10 @@ class Adm01InboundRequest:
 class Adm01OutboundSummary:
     """Safe projection of handler summary (primitives / string enums only)."""
 
-    internal_user_id: str | None
-    subscription_state_label: str | None
-    entitlement_category: str
-    policy_flag: str
-    issuance_state: str
+    telegram_identity_known: bool
+    subscription_bucket: str
+    access_readiness_bucket: str
+    recommended_next_action: str
     redaction: str
 
 
@@ -95,13 +94,12 @@ def _try_build_input(
 
 
 def _summary_to_outbound(summary: Adm01LookupSummary) -> Adm01OutboundSummary:
-    snap = summary.subscription.snapshot
+    readiness = summary.support_readiness
     return Adm01OutboundSummary(
-        internal_user_id=snap.internal_user_id if snap is not None else None,
-        subscription_state_label=snap.state_label if snap is not None else None,
-        entitlement_category=summary.entitlement.category.value,
-        policy_flag=summary.policy_flag.value,
-        issuance_state=summary.issuance.state.value,
+        telegram_identity_known=readiness.telegram_identity_known,
+        subscription_bucket=readiness.subscription_bucket.value,
+        access_readiness_bucket=readiness.access_readiness_bucket.value,
+        recommended_next_action=readiness.recommended_next_action.value,
         redaction=summary.redaction.value,
     )
 

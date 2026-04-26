@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import asdict, fields
 from datetime import datetime, timezone
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
@@ -32,8 +31,6 @@ from app.admin_support.contracts import (
     EntitlementSummary,
     EntitlementSummaryCategory,
     InternalUserTarget,
-    IssuanceOperationalState,
-    IssuanceOperationalSummary,
 )
 from app.application.interfaces import SubscriptionSnapshot
 from app.internal_admin.adm01_bundle import (
@@ -187,14 +184,13 @@ def test_wiring_issued_ok_via_asgi() -> None:
         body = r.json()
         assert body["outcome"] == "success"
         s = body["summary"]
-        assert s["issuance_state"] == "ok"
-        assert s["internal_user_id"] == "u-777"
+        assert s["access_readiness_bucket"] == "active_access_ready"
+        assert s["telegram_identity_known"] is True
         assert repo.get_current_calls == 1
         out = r.text
         _assert_json_has_no_secrets(out)
-        s_obj = IssuanceOperationalSummary(state=IssuanceOperationalState(s["issuance_state"]))
-        d = asdict(s_obj)
-        assert set(d.keys()) == {f.name for f in fields(s_obj)}
+        assert s["subscription_bucket"] == "active"
+        assert s["recommended_next_action"] == "ask_user_to_use_get_access"
 
     _run(main())
 
@@ -204,7 +200,7 @@ def test_wiring_revoked_maps_to_none() -> None:
     repo = _IssuanceRepoFake(_row_revoked())
     app = build_adm01_internal_lookup_http_app(
         identity=_IdentityEcho(),
-        subscription=_Subscription("x"),
+        subscription=_Subscription("active"),
         entitlement=_Entitlement(EntitlementSummaryCategory.NONE),
         issuance=Adm01PostgresIssuanceReadAdapter(repo),
         policy=_Policy(AdminPolicyFlag.DEFAULT),
@@ -221,7 +217,7 @@ def test_wiring_revoked_maps_to_none() -> None:
             },
         )
         assert r.status_code == 200
-        assert r.json()["summary"]["issuance_state"] == "none"
+        assert r.json()["summary"]["access_readiness_bucket"] == "active_access_not_ready"
         _assert_json_has_no_secrets(r.text)
         assert repo.get_current_calls == 1
 
@@ -282,7 +278,7 @@ def test_bundle_delegates_to_wiring() -> None:
                 "internal_user_id": "u-777",
             },
         )
-        assert r.json()["summary"]["issuance_state"] == "ok"
+        assert r.json()["summary"]["access_readiness_bucket"] == "active_access_ready"
         _assert_json_has_no_secrets(r.text)
 
     _run(main())
@@ -314,7 +310,7 @@ def test_bundle_with_postgres_repo_uses_wiring_helper() -> None:
             },
         )
         j = r.json()
-        assert j["summary"]["issuance_state"] == "ok"
+        assert j["summary"]["access_readiness_bucket"] == "active_access_ready"
         _assert_json_has_no_secrets(r.text)
         assert repo.get_current_for_user.await_count == 1
 
@@ -348,11 +344,10 @@ def test_outbound_json_keys_limited() -> None:
         s = d["summary"]
         assert s is not None
         assert set(s.keys()) <= {
-            "internal_user_id",
-            "subscription_state_label",
-            "entitlement_category",
-            "policy_flag",
-            "issuance_state",
+            "telegram_identity_known",
+            "subscription_bucket",
+            "access_readiness_bucket",
+            "recommended_next_action",
             "redaction",
         }
         _assert_json_has_no_secrets(json.dumps(d))
