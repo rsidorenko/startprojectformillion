@@ -28,6 +28,8 @@ from tests.slice1_expected_user_copy import (
     RESEND_ACCESS_NOT_READY_TEXT,
     RESEND_ACCESS_TEMPORARILY_UNAVAILABLE_TEXT,
     SLICE1_HELP_TEXT,
+    SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY_TEXT,
+    SUBSCRIPTION_ACTIVE_ACCESS_READY_TEXT,
 )
 
 _CID = "corr-test-01"
@@ -190,6 +192,33 @@ def test_subscription_active_renders_without_billing_internals() -> None:
     out = render_telegram_outbound_plan(plan)
     assert "active" in out.message_text.lower()
     assert "provider" not in out.message_text.lower()
+    _assert_no_dsn_or_secretish(out.message_text)
+
+
+@pytest.mark.parametrize(
+    ("message_key", "expected_text"),
+    (
+        (
+            OutboundMessageKey.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY.value,
+            SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY_TEXT,
+        ),
+        (
+            OutboundMessageKey.SUBSCRIPTION_ACTIVE_ACCESS_READY.value,
+            SUBSCRIPTION_ACTIVE_ACCESS_READY_TEXT,
+        ),
+    ),
+)
+def test_subscription_access_readiness_messages_are_safe(
+    message_key: str,
+    expected_text: str,
+) -> None:
+    plan = _plan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=message_key,
+    )
+    out = render_telegram_outbound_plan(plan)
+    assert out.message_text == expected_text
+    assert "/get_access" in out.message_text
     _assert_no_dsn_or_secretish(out.message_text)
 
 

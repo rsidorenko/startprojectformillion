@@ -43,6 +43,14 @@ _CATALOG_TEXT: dict[str, str] = {
         "Your subscription is active from the information this bot can read. "
         "This build does not send connection files; use /help for commands."
     ),
+    OutboundMessageKey.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY.value: (
+        "Your subscription is active, but access instructions are not ready yet. "
+        "Try /get_access in a bit."
+    ),
+    OutboundMessageKey.SUBSCRIPTION_ACTIVE_ACCESS_READY.value: (
+        "Your subscription is active and access instructions are ready. "
+        "Use /get_access to receive them safely."
+    ),
     OutboundMessageKey.SLICE1_HELP.value: (
         "Command list in this build:\n"
         "/start - register and link this chat to your account\n"

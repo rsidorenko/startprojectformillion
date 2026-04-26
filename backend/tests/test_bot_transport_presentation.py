@@ -137,6 +137,34 @@ def test_status_subscription_active_maps_stably() -> None:
     assert r.code == TransportStatusCode.SUBSCRIPTION_ACTIVE.value
 
 
+def test_status_subscription_active_access_not_ready_maps_stably() -> None:
+    cid = new_correlation_id()
+    r = map_get_subscription_status_to_transport(
+        GetSubscriptionStatusResult(
+            outcome=OperationOutcomeCategory.SUCCESS,
+            correlation_id=cid,
+            safe_status=SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY,
+            user_safe=None,
+        ),
+    )
+    assert r.category is TransportResponseCategory.SUCCESS
+    assert r.code == TransportStatusCode.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY.value
+
+
+def test_status_subscription_active_access_ready_maps_stably() -> None:
+    cid = new_correlation_id()
+    r = map_get_subscription_status_to_transport(
+        GetSubscriptionStatusResult(
+            outcome=OperationOutcomeCategory.SUCCESS,
+            correlation_id=cid,
+            safe_status=SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_READY,
+            user_safe=None,
+        ),
+    )
+    assert r.category is TransportResponseCategory.SUCCESS
+    assert r.code == TransportStatusCode.SUBSCRIPTION_ACTIVE_ACCESS_READY.value
+
+
 def test_transport_response_has_no_outcome_or_internal_fields() -> None:
     cid = new_correlation_id()
     r = map_bootstrap_identity_to_transport(

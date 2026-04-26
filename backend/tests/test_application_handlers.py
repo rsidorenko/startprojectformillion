@@ -16,6 +16,7 @@ from app.application.interfaces import (
     IdentityRecord,
     SubscriptionSnapshot,
 )
+from app.application.telegram_access_resend import IssuanceCurrentStateRef
 from app.security.errors import (
     InternalErrorCategory,
     PersistenceDependencyError,
@@ -87,6 +88,14 @@ class _FakeSnapshots:
         self._by_user = by_user
 
     async def get_for_user(self, internal_user_id: str) -> SubscriptionSnapshot | None:
+        return self._by_user.get(internal_user_id)
+
+
+class _FakeIssuanceStateLookup:
+    def __init__(self, by_user: dict[str, IssuanceCurrentStateRef | None]) -> None:
+        self._by_user = by_user
+
+    async def get_current_for_user(self, internal_user_id: str) -> IssuanceCurrentStateRef | None:
         return self._by_user.get(internal_user_id)
 
 
@@ -197,7 +206,7 @@ def test_get_status_known_user_needs_review_snapshot() -> None:
     _run(main())
 
 
-def test_get_status_active_subscription_uses_billing_backed_state() -> None:
+def test_get_status_active_subscription_without_readiness_lookup_is_fail_closed_not_ready() -> None:
     async def main() -> None:
         ident = _FakeIdentityRepo()
         await ident.create_if_absent(52)
@@ -208,7 +217,56 @@ def test_get_status_active_subscription_uses_billing_backed_state() -> None:
         cid = new_correlation_id()
         r = await h.handle(GetSubscriptionStatusInput(telegram_user_id=52, correlation_id=cid))
         assert r.outcome is OperationOutcomeCategory.SUCCESS
-        assert r.safe_status is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE
+        assert r.safe_status is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY
+
+    _run(main())
+
+
+def test_get_status_active_subscription_without_issued_access_is_not_ready() -> None:
+    async def main() -> None:
+        ident = _FakeIdentityRepo()
+        await ident.create_if_absent(520)
+        snap = SubscriptionSnapshot(
+            internal_user_id="u520",
+            state_label=SubscriptionSnapshotState.ACTIVE.value,
+        )
+        h = GetSubscriptionStatusHandler(
+            ident,
+            _FakeSnapshots({"u520": snap}),
+            issuance_state_lookup=_FakeIssuanceStateLookup({"u520": None}),
+        )
+        cid = new_correlation_id()
+        r = await h.handle(GetSubscriptionStatusInput(telegram_user_id=520, correlation_id=cid))
+        assert r.outcome is OperationOutcomeCategory.SUCCESS
+        assert r.safe_status is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY
+
+    _run(main())
+
+
+def test_get_status_active_subscription_with_issued_access_is_ready() -> None:
+    async def main() -> None:
+        ident = _FakeIdentityRepo()
+        await ident.create_if_absent(521)
+        snap = SubscriptionSnapshot(
+            internal_user_id="u521",
+            state_label=SubscriptionSnapshotState.ACTIVE.value,
+        )
+        h = GetSubscriptionStatusHandler(
+            ident,
+            _FakeSnapshots({"u521": snap}),
+            issuance_state_lookup=_FakeIssuanceStateLookup(
+                {
+                    "u521": IssuanceCurrentStateRef(
+                        issue_idempotency_key="issue-521",
+                        is_revoked=False,
+                    )
+                }
+            ),
+        )
+        cid = new_correlation_id()
+        r = await h.handle(GetSubscriptionStatusInput(telegram_user_id=521, correlation_id=cid))
+        assert r.outcome is OperationOutcomeCategory.SUCCESS
+        assert r.safe_status is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_READY
 
     _run(main())
 

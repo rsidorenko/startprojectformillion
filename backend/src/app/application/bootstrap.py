@@ -95,7 +95,11 @@ def build_slice1_composition(
     )
     return Slice1Composition(
         bootstrap=BootstrapIdentityHandler(identity, idempotency, audit, snapshot_writer),
-        get_status=GetSubscriptionStatusHandler(identity, snapshots),
+        get_status=GetSubscriptionStatusHandler(
+            identity,
+            snapshots,
+            issuance_state_lookup=issuance_state_lookup,
+        ),
         identity=identity,
         idempotency=idempotency,
         audit=audit,

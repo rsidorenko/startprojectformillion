@@ -36,6 +36,8 @@ class OutboundMessageKey(str, Enum):
     INACTIVE_OR_NOT_ELIGIBLE = "inactive_or_not_eligible"
     NEEDS_REVIEW = "needs_review"
     SUBSCRIPTION_ACTIVE = "subscription_active"
+    SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY = "subscription_active_access_not_ready"
+    SUBSCRIPTION_ACTIVE_ACCESS_READY = "subscription_active_access_ready"
     INVALID_INPUT = "invalid_input"
     TRY_AGAIN_LATER = "try_again_later"
     SERVICE_UNAVAILABLE = "service_unavailable"
@@ -200,6 +202,24 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
             return TelegramOutboundPlan(
                 category=OutboundPlanCategory.SUCCESS,
                 message_key=OutboundMessageKey.SUBSCRIPTION_ACTIVE.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportStatusCode.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportStatusCode.SUBSCRIPTION_ACTIVE_ACCESS_READY.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.SUBSCRIPTION_ACTIVE_ACCESS_READY.value,
                 next_action_key=None,
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,

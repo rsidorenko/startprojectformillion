@@ -13,6 +13,7 @@ from app.application.interfaces import (
     SubscriptionSnapshotWriter,
     UserIdentityRepository,
 )
+from app.application.telegram_access_resend import IssuanceStateForResendLookup
 from app.domain.status_view import map_subscription_status_view
 from app.security.errors import (
     InternalErrorCategory,
@@ -280,9 +281,11 @@ class GetSubscriptionStatusHandler:
         self,
         identity: UserIdentityRepository,
         snapshots: SubscriptionSnapshotReader,
+        issuance_state_lookup: IssuanceStateForResendLookup | None = None,
     ) -> None:
         self._identity = identity
         self._snapshots = snapshots
+        self._issuance_state_lookup = issuance_state_lookup
 
     async def handle(self, inp: GetSubscriptionStatusInput) -> GetSubscriptionStatusResult:
         cid = inp.correlation_id
@@ -346,6 +349,31 @@ class GetSubscriptionStatusHandler:
             state = _snapshot_state_from_reader_label(snap.state_label)
 
         safe = map_subscription_status_view(True, state)
+        if safe is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE:
+            lookup = self._issuance_state_lookup
+            if lookup is None:
+                safe = SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY
+            else:
+                try:
+                    current = await lookup.get_current_for_user(identity.internal_user_id)
+                except PersistenceDependencyError as e:
+                    return GetSubscriptionStatusResult(
+                        outcome=OperationOutcomeCategory.RETRYABLE_DEPENDENCY,
+                        correlation_id=cid,
+                        safe_status=SafeUserStatusCategory.INACTIVE_OR_NOT_ELIGIBLE,
+                        user_safe=map_internal_to_user_safe(e.category),
+                    )
+                except Exception:
+                    return GetSubscriptionStatusResult(
+                        outcome=OperationOutcomeCategory.INTERNAL_FAILURE,
+                        correlation_id=cid,
+                        safe_status=SafeUserStatusCategory.INACTIVE_OR_NOT_ELIGIBLE,
+                        user_safe=map_internal_to_user_safe(InternalErrorCategory.UNKNOWN),
+                    )
+                if current is None or current.is_revoked:
+                    safe = SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY
+                else:
+                    safe = SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_READY
         return GetSubscriptionStatusResult(
             outcome=OperationOutcomeCategory.SUCCESS,
             correlation_id=cid,

@@ -33,6 +33,8 @@ class TransportStatusCode(str, Enum):
     INACTIVE_OR_NOT_ELIGIBLE = "inactive_or_not_eligible"
     NEEDS_REVIEW = "needs_review"
     SUBSCRIPTION_ACTIVE = "subscription_active"
+    SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY = "subscription_active_access_not_ready"
+    SUBSCRIPTION_ACTIVE_ACCESS_READY = "subscription_active_access_ready"
 
 
 class TransportErrorCode(str, Enum):
@@ -106,6 +108,10 @@ def _status_code_for_safe_category(status: SafeUserStatusCategory) -> str:
         return TransportStatusCode.NEEDS_ONBOARDING.value
     if status is SafeUserStatusCategory.NEEDS_REVIEW:
         return TransportStatusCode.NEEDS_REVIEW.value
+    if status is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY:
+        return TransportStatusCode.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY.value
+    if status is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_READY:
+        return TransportStatusCode.SUBSCRIPTION_ACTIVE_ACCESS_READY.value
     if status is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE:
         return TransportStatusCode.SUBSCRIPTION_ACTIVE.value
     return TransportStatusCode.INACTIVE_OR_NOT_ELIGIBLE.value

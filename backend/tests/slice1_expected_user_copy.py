@@ -48,3 +48,13 @@ RESEND_ACCESS_NOT_READY_TEXT = (
 RESEND_ACCESS_TEMPORARILY_UNAVAILABLE_TEXT = (
     "Access instructions resend is temporarily unavailable. Please try again later."
 )
+
+SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY_TEXT = (
+    "Your subscription is active, but access instructions are not ready yet. "
+    "Try /get_access in a bit."
+)
+
+SUBSCRIPTION_ACTIVE_ACCESS_READY_TEXT = (
+    "Your subscription is active and access instructions are ready. "
+    "Use /get_access to receive them safely."
+)
