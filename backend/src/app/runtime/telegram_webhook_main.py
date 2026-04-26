@@ -1,0 +1,262 @@
+"""ASGI entrypoint for slice-1 Telegram Bot API HTTP webhook (env-driven; no secrets in logs)."""
+
+from __future__ import annotations
+
+import logging
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Awaitable, Callable
+
+import asyncpg
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+
+from app.observability.logging_policy import sanitize_structured_fields
+from app.persistence.slice1_postgres_wiring import slice1_postgres_repos_requested
+from app.runtime.telegram_httpx_raw_startup import build_slice1_httpx_raw_runtime_bundle
+from app.runtime.telegram_webhook_ingress import (
+    create_slice1_telegram_webhook_starlette_app,
+    load_telegram_webhook_ingress_settings_from_env,
+)
+from app.runtime.telegram_webhook_ingress_telemetry import (
+    StructuredLoggingTelegramWebhookIngressTelemetry,
+    TelegramWebhookIngressDecisionEvent,
+    TelegramWebhookIngressTelemetry,
+)
+from app.security.config import ConfigurationError, load_runtime_config
+
+_LOGGER = logging.getLogger(__name__)
+ReadinessCheck = Callable[[], Awaitable[bool]]
+
+
+def _log_webhook_main_event(*, outcome: str, detail: str) -> None:
+    _LOGGER.info(
+        "runtime.telegram_webhook_main",
+        extra={
+            "structured_fields": sanitize_structured_fields(
+                {
+                    "intent": "webhook_asgi_entrypoint",
+                    "outcome": outcome,
+                    "operation": detail,
+                }
+            )
+        },
+    )
+
+
+async def _webhook_disabled_response(_: Request) -> JSONResponse:
+    return JSONResponse({"ok": False, "error": "webhook_http_disabled"}, status_code=503)
+
+
+async def _healthz(_: Request) -> JSONResponse:
+    return JSONResponse({"status": "ok"})
+
+
+async def _readyz_disabled(_: Request) -> JSONResponse:
+    return JSONResponse({"status": "disabled"}, status_code=503)
+
+
+async def _emit_decision_best_effort(
+    telemetry: TelegramWebhookIngressTelemetry,
+    event: TelegramWebhookIngressDecisionEvent,
+) -> None:
+    try:
+        await telemetry.emit_decision(event)
+    except Exception:
+        return
+
+
+def _build_webhook_disabled_handler(telemetry: TelegramWebhookIngressTelemetry):
+    async def _handler(_: Request) -> JSONResponse:
+        await _emit_decision_best_effort(
+            telemetry,
+            TelegramWebhookIngressDecisionEvent(
+                event_type="telegram_webhook_ingress_decision",
+                decision="disabled",
+                reason_bucket="webhook_disabled",
+                path_bucket="other",
+                principal_marker="telegram_webhook_redacted",
+            ),
+        )
+        return await _webhook_disabled_response(_)
+
+    return _handler
+
+
+def _should_check_postgres_readiness(*, database_url: str | None) -> bool:
+    dsn = (database_url or "").strip()
+    return bool(dsn) or slice1_postgres_repos_requested()
+
+
+async def _default_postgres_readiness_check(*, database_url: str) -> bool:
+    conn = None
+    try:
+        conn = await asyncpg.connect(database_url, timeout=2)
+        await conn.fetchval("SELECT 1")
+    except Exception:
+        return False
+    finally:
+        if conn is not None:
+            try:
+                await conn.close()
+            except Exception:
+                pass
+    return True
+
+
+def _make_dependency_readiness_checker(
+    *,
+    runtime_initialized: bool,
+    database_url: str | None,
+    postgres_check: Callable[[str], Awaitable[bool]] = _default_postgres_readiness_check,
+) -> ReadinessCheck:
+    async def _checker() -> bool:
+        if not runtime_initialized:
+            return False
+        if not _should_check_postgres_readiness(database_url=database_url):
+            return True
+        dsn = (database_url or "").strip()
+        if not dsn:
+            return False
+        return await postgres_check(dsn)
+
+    return _checker
+
+
+def _build_readyz_handler(
+    checker: ReadinessCheck,
+    *,
+    telemetry: TelegramWebhookIngressTelemetry,
+):
+    async def _readyz(_: Request) -> JSONResponse:
+        try:
+            if await checker():
+                return JSONResponse({"status": "ok"})
+            await _emit_decision_best_effort(
+                telemetry,
+                TelegramWebhookIngressDecisionEvent(
+                    event_type="telegram_webhook_ingress_decision",
+                    decision="not_ready",
+                    reason_bucket="readiness_failed",
+                    path_bucket="readyz",
+                    principal_marker="telegram_webhook_redacted",
+                ),
+            )
+            return JSONResponse({"status": "not_ready"}, status_code=503)
+        except Exception:
+            await _emit_decision_best_effort(
+                telemetry,
+                TelegramWebhookIngressDecisionEvent(
+                    event_type="telegram_webhook_ingress_decision",
+                    decision="not_ready",
+                    reason_bucket="readiness_failed",
+                    path_bucket="readyz",
+                    principal_marker="telegram_webhook_redacted",
+                ),
+            )
+            _LOGGER.warning(
+                "runtime.telegram_webhook_main.readiness_check_failed",
+                extra={
+                    "structured_fields": sanitize_structured_fields(
+                        {
+                            "intent": "webhook_asgi_entrypoint",
+                            "outcome": "not_ready",
+                            "operation": "dependency_readiness_check",
+                        }
+                    )
+                },
+            )
+            return JSONResponse({"status": "not_ready"}, status_code=503)
+
+    return _readyz
+
+
+def _build_webhook_http_disabled_starlette_app() -> Starlette:
+    """Disabled webhook app: ``/healthz`` alive, ``/readyz`` and other paths disabled (no BOT_TOKEN read)."""
+
+    _log_webhook_main_event(outcome="disabled", detail="http_enable_falsey")
+    telemetry = StructuredLoggingTelegramWebhookIngressTelemetry()
+    return Starlette(
+        routes=[
+            Route("/healthz", _healthz, methods=["GET"]),
+            Route("/readyz", _readyz_disabled, methods=["GET"]),
+            Route("/{path:path}", _build_webhook_disabled_handler(telemetry)),
+        ],
+    )
+
+
+def build_slice1_telegram_webhook_asgi_application_from_env(
+    *,
+    dependency_readiness_check: ReadinessCheck | None = None,
+) -> Starlette:
+    """
+    Build the webhook ASGI application from the process environment.
+
+    - Webhook HTTP disabled (default): returns a Starlette app with ``/healthz`` = 200 and
+      ``/readyz`` = 503, without loading ``BOT_TOKEN`` or mounting the Telegram route.
+    - Webhook HTTP enabled: loads :func:`load_runtime_config`, builds the same httpx raw bundle as
+      long-polling slice-1, mounts ``create_slice1_telegram_webhook_starlette_app``, and closes
+      the outbound httpx client on app shutdown (lifespan).
+    - Production-like ``APP_ENV`` with HTTP enabled and missing webhook secret: raises
+      :class:`ConfigurationError` (fail-closed) before accepting traffic.
+    """
+    app_env = os.environ.get("APP_ENV", "development").strip() or "development"
+    settings = load_telegram_webhook_ingress_settings_from_env(app_env=app_env)
+    if settings is None:
+        return _build_webhook_http_disabled_starlette_app()
+
+    config = load_runtime_config()
+    raw_bundle = build_slice1_httpx_raw_runtime_bundle(config.bot_token)
+    runtime = raw_bundle.bundle.runtime
+    telemetry = StructuredLoggingTelegramWebhookIngressTelemetry()
+    inner = create_slice1_telegram_webhook_starlette_app(runtime, settings=settings, telemetry=telemetry)
+    checker = dependency_readiness_check or _make_dependency_readiness_checker(
+        runtime_initialized=True,
+        database_url=config.database_url,
+    )
+    readyz_handler = _build_readyz_handler(checker, telemetry=telemetry)
+
+    @asynccontextmanager
+    async def _lifespan(_: Starlette) -> AsyncIterator[None]:
+        _log_webhook_main_event(outcome="ready", detail="http_enabled")
+        yield
+        await raw_bundle.aclose()
+        _log_webhook_main_event(outcome="shutdown", detail="client_closed")
+
+    routes = [
+        Route("/healthz", _healthz, methods=["GET"]),
+        Route("/readyz", readyz_handler, methods=["GET"]),
+        *list(inner.routes),
+    ]
+    return Starlette(routes=routes, lifespan=_lifespan)
+
+
+def _build_app_or_raise_config() -> Starlette:
+    try:
+        return build_slice1_telegram_webhook_asgi_application_from_env()
+    except ConfigurationError:
+        _LOGGER.error(
+            "runtime.telegram_webhook_main",
+            extra={
+                "structured_fields": sanitize_structured_fields(
+                    {
+                        "intent": "webhook_asgi_entrypoint",
+                        "outcome": "config_error",
+                        "operation": "build",
+                        "internal_category": "configuration_error",
+                    }
+                )
+            },
+        )
+        raise
+
+
+app: Starlette = _build_app_or_raise_config()
+
+__all__ = [
+    "app",
+    "build_slice1_telegram_webhook_asgi_application_from_env",
+]

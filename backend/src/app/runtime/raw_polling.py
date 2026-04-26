@@ -10,7 +10,7 @@ from app.application.bootstrap import Slice1Composition
 from app.runtime.binding import process_raw_updates_with_bridge
 from app.runtime.bridge import RuntimeUpdateBridge
 from app.runtime.offsets import advance_polling_offset
-from app.runtime.polling import PollingRuntimeConfig, Slice1PollingRuntime
+from app.runtime.polling import PollingBatchResult, PollingRuntimeConfig, Slice1PollingRuntime
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +105,15 @@ class Slice1RawPollingRuntime:
     @property
     def current_offset(self) -> int | None:
         return self._current_offset
+
+    async def process_single_mapped_update(
+        self,
+        update: Mapping[str, Any],
+        *,
+        correlation_id: str | None = None,
+    ) -> PollingBatchResult:
+        """Process one Telegram-shaped mapping without ``getUpdates`` (push-style HTTP ingress)."""
+        return await self._inner.process_single_update(update, correlation_id=correlation_id)
 
     async def poll_once(self, *, correlation_id: str | None = None) -> RawPollingBatchResult:
         limit = self._config.max_updates_per_batch
