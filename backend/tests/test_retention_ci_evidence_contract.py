@@ -61,3 +61,17 @@ def test_retention_integration_boundary_blocking_vs_advisory_locked() -> None:
 
     operator_step = _step_block(text, "Run operator billing ingest/apply e2e smoke (advisory evidence)")
     assert "continue-on-error: true" in operator_step
+
+
+def test_adm01_postgres_composition_advisory_evidence_contract_locked() -> None:
+    text = _workflow_text()
+    step = _step_block(text, "Run ADM-01 Postgres issuance composition check (advisory)")
+
+    assert "id: adm01_postgres_issuance_composition" in step
+    assert "continue-on-error: true" in step
+    assert "run: python scripts/check_adm01_postgres_issuance_composition.py" in step
+
+    assert "DATABASE_URL:" in step
+    assert "postgresql://slice1ret_ci" in step
+    assert "slice1retention_ci" in step
+    assert 'ADM01_POSTGRES_ISSUANCE_COMPOSITION_CHECK_ENABLE: "1"' in step
