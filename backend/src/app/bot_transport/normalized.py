@@ -21,9 +21,15 @@ _MAX_LINE_LEN = 512
 _MAX_COMMAND_TOKEN_LEN = 64
 
 _SLICE1_BOOTSTRAP_COMMANDS: frozenset[str] = frozenset({"/start"})
-_SLICE1_STATUS_COMMANDS: frozenset[str] = frozenset({"/status"})
-_SLICE1_HELP_COMMANDS: frozenset[str] = frozenset({"/help"})
+_SLICE1_STATUS_COMMANDS: frozenset[str] = frozenset({"/status", "/my_subscription"})
+_SLICE1_HELP_COMMANDS: frozenset[str] = frozenset({"/help", "/menu"})
 _SLICE1_RESEND_COMMANDS: frozenset[str] = frozenset({"/resend_access", "/get_access"})
+_SLICE1_PLANS_COMMANDS: frozenset[str] = frozenset({"/plans"})
+_SLICE1_BUY_COMMANDS: frozenset[str] = frozenset({"/buy", "/checkout"})
+_SLICE1_SUCCESS_COMMANDS: frozenset[str] = frozenset({"/success"})
+_SLICE1_RENEW_COMMANDS: frozenset[str] = frozenset({"/renew"})
+_SLICE1_SUPPORT_MENU_COMMANDS: frozenset[str] = frozenset({"/support"})
+_SLICE1_SUPPORT_CONTACT_COMMANDS: frozenset[str] = frozenset({"/support_contact"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +77,40 @@ class NormalizedSlice1Help:
 
 
 @dataclass(frozen=True, slots=True)
+class NormalizedSlice1Plans:
+    correlation_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedSlice1Buy:
+    correlation_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedSlice1Success:
+    correlation_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedSlice1Renew:
+    correlation_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedSlice1SupportMenu:
+    """Read-only /support: FAQ menu; no handler, no state change."""
+
+    correlation_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedSlice1SupportContact:
+    """Read-only /support_contact: safe contact lines; no handler, no state change."""
+
+    correlation_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class NormalizedSlice1Rejected:
     reason: NormalizationRejectReason
 
@@ -80,6 +120,12 @@ NormalizedSlice1Result = (
     | NormalizedSlice1Status
     | NormalizedSlice1ResendAccess
     | NormalizedSlice1Help
+    | NormalizedSlice1Plans
+    | NormalizedSlice1Buy
+    | NormalizedSlice1Success
+    | NormalizedSlice1Renew
+    | NormalizedSlice1SupportMenu
+    | NormalizedSlice1SupportContact
     | NormalizedSlice1Rejected
 )
 
@@ -172,5 +218,17 @@ def parse_slice1_transport(envelope: TransportIncomingEnvelope) -> NormalizedSli
 
     if token in _SLICE1_HELP_COMMANDS:
         return NormalizedSlice1Help(correlation_id=envelope.correlation_id)
+    if token in _SLICE1_PLANS_COMMANDS:
+        return NormalizedSlice1Plans(correlation_id=envelope.correlation_id)
+    if token in _SLICE1_BUY_COMMANDS:
+        return NormalizedSlice1Buy(correlation_id=envelope.correlation_id)
+    if token in _SLICE1_SUCCESS_COMMANDS:
+        return NormalizedSlice1Success(correlation_id=envelope.correlation_id)
+    if token in _SLICE1_RENEW_COMMANDS:
+        return NormalizedSlice1Renew(correlation_id=envelope.correlation_id)
+    if token in _SLICE1_SUPPORT_MENU_COMMANDS:
+        return NormalizedSlice1SupportMenu(correlation_id=envelope.correlation_id)
+    if token in _SLICE1_SUPPORT_CONTACT_COMMANDS:
+        return NormalizedSlice1SupportContact(correlation_id=envelope.correlation_id)
 
     return NormalizedSlice1Rejected(reason=NormalizationRejectReason.UNKNOWN_COMMAND)

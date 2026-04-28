@@ -8,10 +8,16 @@ from app.application.handlers import BootstrapIdentityInput, GetSubscriptionStat
 from app.application.telegram_access_resend import TelegramAccessResendSourceCommand
 from app.bot_transport.normalized import (
     NormalizationRejectReason,
+    NormalizedSlice1Buy,
     NormalizedSlice1Bootstrap,
     NormalizedSlice1Help,
+    NormalizedSlice1Plans,
     NormalizedSlice1Rejected,
     NormalizedSlice1ResendAccess,
+    NormalizedSlice1Renew,
+    NormalizedSlice1Success,
+    NormalizedSlice1SupportContact,
+    NormalizedSlice1SupportMenu,
     NormalizedSlice1Status,
     TransportIncomingEnvelope,
     normalize_command_token,
@@ -103,6 +109,38 @@ def test_help_with_bot_suffix_normalized() -> None:
     )
     assert isinstance(r, NormalizedSlice1Help)
     assert r.correlation_id == cid
+
+
+def test_menu_alias_maps_to_help_path() -> None:
+    cid = new_correlation_id()
+    r = parse_slice1_transport(_env(cid=cid, cmd="/menu", update_id=None))
+    assert isinstance(r, NormalizedSlice1Help)
+    assert r.correlation_id == cid
+
+
+def test_my_subscription_alias_maps_to_status() -> None:
+    cid = new_correlation_id()
+    r = parse_slice1_transport(_env(cid=cid, cmd="/my_subscription", update_id=None))
+    assert isinstance(r, NormalizedSlice1Status)
+    assert r.input.correlation_id == cid
+
+
+def test_storefront_commands_are_normalized() -> None:
+    cid = new_correlation_id()
+    r_plans = parse_slice1_transport(_env(cid=cid, cmd="/plans", update_id=None))
+    r_buy = parse_slice1_transport(_env(cid=cid, cmd="/buy", update_id=None))
+    r_checkout = parse_slice1_transport(_env(cid=cid, cmd="/checkout", update_id=None))
+    r_success = parse_slice1_transport(_env(cid=cid, cmd="/success", update_id=None))
+    r_renew = parse_slice1_transport(_env(cid=cid, cmd="/renew", update_id=None))
+    r_support = parse_slice1_transport(_env(cid=cid, cmd="/support", update_id=None))
+    r_support_contact = parse_slice1_transport(_env(cid=cid, cmd="/support_contact", update_id=None))
+    assert isinstance(r_plans, NormalizedSlice1Plans)
+    assert isinstance(r_buy, NormalizedSlice1Buy)
+    assert isinstance(r_checkout, NormalizedSlice1Buy)
+    assert isinstance(r_success, NormalizedSlice1Success)
+    assert isinstance(r_renew, NormalizedSlice1Renew)
+    assert isinstance(r_support, NormalizedSlice1SupportMenu)
+    assert isinstance(r_support_contact, NormalizedSlice1SupportContact)
 
 
 def test_resend_access_maps_to_resend_input() -> None:

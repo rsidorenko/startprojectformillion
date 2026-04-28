@@ -16,6 +16,8 @@ from app.bot_transport.presentation import (
     TransportNextActionHint,
     TransportResponseCategory,
     TransportSafeResponse,
+    TransportStorefrontCode,
+    TransportSupportCode,
     TransportStatusCode,
 )
 
@@ -50,6 +52,16 @@ class OutboundMessageKey(str, Enum):
     RESEND_ACCESS_NOT_READY = "resend_access_not_ready"
     RESEND_ACCESS_TEMPORARILY_UNAVAILABLE = "resend_access_temporarily_unavailable"
     TELEGRAM_COMMAND_RATE_LIMITED = "telegram_command_rate_limited"
+    STORE_MENU = "store_menu"
+    STORE_PLANS = "store_plans"
+    STORE_BUY = "store_buy"
+    STORE_SUCCESS = "store_success"
+    STORE_SUCCESS_ACTIVE = "store_success_active"
+    STORE_RENEW = "store_renew"
+    SUPPORT_MENU = "support_menu"
+    SUPPORT_CONTACT = "support_contact"
+    FULFILLMENT_SUCCESS_NOTIFICATION = "fulfillment_success_notification"
+    SUBSCRIPTION_ACTIVE_CONFIRMATION = "subscription_active_confirmation"
 
 
 class OutboundNextActionKey(str, Enum):
@@ -61,6 +73,10 @@ class OutboundKeyboardMarker(str, Enum):
 
     NONE = "none"
     PRIMARY_ONBOARDING = "primary_onboarding"
+    STOREFRONT_MAIN = "storefront_main"
+    SUPPORT_MENU = "support_menu"
+    SUPPORT_CONTACT = "support_contact"
+    FULFILLMENT_SUCCESS = "fulfillment_success"
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +112,34 @@ def _service_unavailable_plan(correlation_id: str) -> TelegramOutboundPlan:
     return _error_plan(OutboundMessageKey.SERVICE_UNAVAILABLE, correlation_id)
 
 
+def build_fulfillment_success_notification_plan(
+    *,
+    correlation_id: str,
+    active_until_ymd: str | None,
+) -> TelegramOutboundPlan:
+    """Outbound plan for proactive post-checkout Telegram notice (not command-driven)."""
+    return TelegramOutboundPlan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=OutboundMessageKey.FULFILLMENT_SUCCESS_NOTIFICATION.value,
+        next_action_key=None,
+        keyboard_marker=OutboundKeyboardMarker.FULFILLMENT_SUCCESS.value,
+        correlation_id=correlation_id,
+        active_until_ymd=active_until_ymd,
+    )
+
+
+def build_subscription_active_recovery_confirmation_plan(transport: TransportSafeResponse) -> TelegramOutboundPlan:
+    """Second outbound after UC-02 status when subscription window is still valid (command-driven)."""
+    return TelegramOutboundPlan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=OutboundMessageKey.SUBSCRIPTION_ACTIVE_CONFIRMATION.value,
+        next_action_key=None,
+        keyboard_marker=OutboundKeyboardMarker.FULFILLMENT_SUCCESS.value,
+        correlation_id=transport.correlation_id,
+        active_until_ymd=transport.active_until_ymd,
+    )
+
+
 def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> TelegramOutboundPlan:
     """Map a transport-safe response to a Telegram outbound plan (keys only).
 
@@ -114,7 +158,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 category=OutboundPlanCategory.SUCCESS,
                 message_key=OutboundMessageKey.IDENTITY_READY.value,
                 next_action_key=None,
-                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                keyboard_marker=OutboundKeyboardMarker.STOREFRONT_MAIN.value,
                 correlation_id=cid,
                 replay_suppresses_outbound=transport.replay_suppresses_outbound,
                 uc01_idempotency_key=transport.uc01_idempotency_key,
@@ -125,7 +169,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 category=OutboundPlanCategory.SUCCESS,
                 message_key=OutboundMessageKey.SLICE1_HELP.value,
                 next_action_key=None,
-                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                keyboard_marker=OutboundKeyboardMarker.STOREFRONT_MAIN.value,
                 correlation_id=cid,
                 replay_suppresses_outbound=False,
                 uc01_idempotency_key=None,
@@ -140,6 +184,81 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 correlation_id=cid,
                 uc01_idempotency_key=None,
                 active_until_ymd=transport.active_until_ymd,
+            )
+        if code == TransportStorefrontCode.STORE_MENU.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.STORE_MENU.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.STOREFRONT_MAIN.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+                active_until_ymd=transport.active_until_ymd,
+            )
+        if code == TransportStorefrontCode.STORE_PLANS.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.STORE_PLANS.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.STOREFRONT_MAIN.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+                active_until_ymd=transport.active_until_ymd,
+            )
+        if code == TransportStorefrontCode.STORE_BUY.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.STORE_BUY.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.STOREFRONT_MAIN.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+                active_until_ymd=transport.active_until_ymd,
+            )
+        if code == TransportStorefrontCode.STORE_SUCCESS.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.STORE_SUCCESS.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.STOREFRONT_MAIN.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportStorefrontCode.STORE_SUCCESS_ACTIVE.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.STORE_SUCCESS_ACTIVE.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.STOREFRONT_MAIN.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportStorefrontCode.STORE_RENEW.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.STORE_RENEW.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.STOREFRONT_MAIN.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportSupportCode.SUPPORT_MENU.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.SUPPORT_MENU.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.SUPPORT_MENU.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+            )
+        if code == TransportSupportCode.SUPPORT_CONTACT.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.SUPPORT_CONTACT.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.SUPPORT_CONTACT.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
             )
         if code == TransportAccessResendCode.RESEND_ACCEPTED.value:
             return TelegramOutboundPlan(

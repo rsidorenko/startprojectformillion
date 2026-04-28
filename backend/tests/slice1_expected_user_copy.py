@@ -1,8 +1,9 @@
 """Expected user-facing copy for slice-1 catalog tests (align with message_catalog._CATALOG_TEXT)."""
 
 IDENTITY_READY_TEXT = (
-    "You are set up. Send /status to check the access the bot can show, or /help for a command list. "
-    "This build does not include purchase links, checkout, or delivery of connection files."
+    "Welcome! Your chat is connected.\n"
+    "Use /menu to browse plans and purchase options.\n"
+    "Use /my_subscription anytime to check current status."
 )
 
 NEEDS_ONBOARDING_TEXT = (
@@ -16,15 +17,21 @@ INACTIVE_OR_NOT_ELIGIBLE_TEXT = (
 )
 
 SLICE1_HELP_TEXT = (
-    "Command list in this build:\n"
-    "/start - register and link this chat to your account\n"
-    "/status - show the access or eligibility information the bot can read (unknown state stays fail-closed)\n"
-    "/resend_access - request a safe resend of access instructions (active accounts only)\n"
+    "Available commands:\n"
+    "/start - connect this chat\n"
+    "/menu - main menu\n"
+    "/plans - available plans\n"
+    "/buy - open checkout\n"
+    "/checkout - alias of /buy\n"
+    "/success - post-payment next steps\n"
+    "/my_subscription - subscription status (same as /status)\n"
+    "/status - subscription status\n"
+    "/renew - renewal checkout link\n"
+    "/support - help and FAQ\n"
+    "/support_contact - contact options\n"
+    "/resend_access - resend access instructions when eligible\n"
     "/get_access - alias of /resend_access\n"
-    "/help - show this list\n"
-    "\n"
-    "This preview is read-only for purchase flows and for sending connection material. "
-    "It does not add new entitlement and does not send credentials or files."
+    "/help - this help"
 )
 
 RESEND_ACCESS_ACCEPTED_TEXT = (
@@ -34,7 +41,8 @@ RESEND_ACCESS_ACCEPTED_TEXT = (
 RESEND_ACCESS_NOT_ENABLED_TEXT = "This feature is not available yet."
 
 RESEND_ACCESS_NOT_ELIGIBLE_TEXT = (
-    "Access instructions cannot be resent for this account right now."
+    "Access instructions cannot be resent for this account right now.\n"
+    "If your subscription is inactive or expired, use /renew."
 )
 
 RESEND_ACCESS_COOLDOWN_TEXT = (
@@ -49,14 +57,8 @@ RESEND_ACCESS_TEMPORARILY_UNAVAILABLE_TEXT = (
     "Access instructions resend is temporarily unavailable. Please try again later."
 )
 
-SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY_TEXT = (
-    "Your subscription is active, but access instructions are not ready yet. "
-    "Try /get_access in a bit."
-)
+SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY_TEXT = "Your subscription is active until {date}."
 
-SUBSCRIPTION_ACTIVE_ACCESS_READY_TEXT = (
-    "Your subscription is active and access instructions are ready. "
-    "Use /get_access to receive them safely."
-)
+SUBSCRIPTION_ACTIVE_ACCESS_READY_TEXT = "Your subscription is active until {date}."
 
 TELEGRAM_COMMAND_RATE_LIMITED_TEXT = "Too many requests. Please try again later."
