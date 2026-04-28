@@ -64,6 +64,7 @@ class FakeTelegramPollingClient:
         text: str,
         *,
         correlation_id: str,
+        reply_markup=None,
     ) -> int:
         if self.send_fail:
             raise RuntimeError("send failed")
@@ -88,7 +89,7 @@ def test_polling_batch_one_start_one_send() -> None:
         )
         assert len(client.send_calls) == 1
         assert client.send_calls[0][0] == 42
-        assert "You are set up" in client.send_calls[0][1]
+        assert "Welcome! Your chat is connected." in client.send_calls[0][1]
 
     _run(main())
 
@@ -264,7 +265,7 @@ def test_poll_once_start_one_send() -> None:
         assert r.send_count == 1
         assert len(client.send_calls) == 1
         assert client.send_calls[0][0] == 42
-        assert "You are set up" in client.send_calls[0][1]
+        assert "Welcome! Your chat is connected." in client.send_calls[0][1]
 
     _run(main())
 

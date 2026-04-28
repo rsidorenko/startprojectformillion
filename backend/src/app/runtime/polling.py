@@ -44,6 +44,7 @@ class TelegramPollingClient(Protocol):
         text: str,
         *,
         correlation_id: str,
+        reply_markup: Mapping[str, Any] | None = None,
     ) -> int:
         """Send one outbound text message; failures are reported via exceptions.
 
@@ -94,20 +95,30 @@ class Slice1PollingRuntime:
                 noop += 1
                 continue
             idem_key = action.uc01_idempotency_key
+            sends: list[tuple[str, Mapping[str, Any] | None]] = [
+                (action.message_text or "", action.reply_markup),
+            ]
+            sends.extend((fu.message_text, fu.reply_markup) for fu in action.follow_ups)
             try:
                 if idem_key is not None:
                     await self._composition.outbound_delivery.ensure_pending(idem_key)
-                msg_id = await self._client.send_text_message(
-                    action.chat_id,
-                    action.message_text or "",
-                    correlation_id=action.correlation_id,
-                )
+                first = True
+                for text, markup in sends:
+                    if not text.strip():
+                        continue
+                    msg_id = await self._client.send_text_message(
+                        action.chat_id,
+                        text,
+                        correlation_id=action.correlation_id,
+                        reply_markup=markup,
+                    )
+                    if first and idem_key is not None:
+                        await self._composition.outbound_delivery.mark_sent(idem_key, msg_id)
+                    first = False
+                    send_ok += 1
             except Exception:
                 send_fail += 1
                 continue
-            if idem_key is not None:
-                await self._composition.outbound_delivery.mark_sent(idem_key, msg_id)
-            send_ok += 1
         return PollingBatchResult(
             received_count=received,
             send_count=send_ok,

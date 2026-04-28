@@ -41,6 +41,8 @@ def _build_child_env() -> dict[str, str]:
     child_env["ISSUANCE_OPERATOR_ENABLE"] = "1"
     child_env["TELEGRAM_ACCESS_RESEND_ENABLE"] = "1"
     child_env["ADM02_ENSURE_ACCESS_ENABLE"] = "1"
+    child_env.setdefault("ACCESS_RECONCILE_MAX_INTERVAL_SECONDS", "3600")
+    child_env.setdefault("SUBSCRIPTION_DEFAULT_PERIOD_DAYS", "30")
     if not child_env.get("BOT_TOKEN"):
         child_env["BOT_TOKEN"] = "1234567890tok"
     return child_env

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import httpx
@@ -125,11 +125,14 @@ class HttpxTelegramRawPollingClient:
         text: str,
         *,
         correlation_id: str,
+        reply_markup: Mapping[str, Any] | None = None,
     ) -> int:
         td = self._polling_policy.timeout.timeout_for_request(ORDINARY_OUTBOUND_REQUEST)
         post_kw = _httpx_post_timeout_kwargs(td)
         _ = correlation_id
-        body = {"chat_id": chat_id, "text": text}
+        body: dict[str, Any] = {"chat_id": chat_id, "text": text}
+        if reply_markup is not None:
+            body["reply_markup"] = dict(reply_markup)
         response = await self._client.post(f"{self._base}sendMessage", json=body, **post_kw)
         response.raise_for_status()
         data = _parse_json_object(response)

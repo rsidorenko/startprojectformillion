@@ -389,6 +389,32 @@ def test_send_text_message_calls_sendmessage_minimal_body() -> None:
     assert body == {"chat_id": 7, "text": "hi"}
 
 
+def test_send_text_message_includes_reply_markup_only_when_present() -> None:
+    requests_log: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests_log.append(request)
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
+
+    async def main() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as ac:
+            c = HttpxTelegramRawPollingClient("x", base_url="https://e/b/", client=ac)
+            await c.send_text_message(7, "plain", correlation_id="cid-1")
+            await c.send_text_message(
+                8,
+                "with kb",
+                correlation_id="cid-2",
+                reply_markup={"keyboard": [["/menu"]], "resize_keyboard": True},
+            )
+
+    asyncio.run(main())
+    body0 = _json_body(requests_log[0])
+    body1 = _json_body(requests_log[1])
+    assert "reply_markup" not in body0
+    assert body1["reply_markup"] == {"keyboard": [["/menu"]], "resize_keyboard": True}
+
+
 def test_correlation_id_not_in_outbound_request() -> None:
     raw_content: bytes = b""
 

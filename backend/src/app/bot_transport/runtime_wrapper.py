@@ -25,6 +25,14 @@ class TelegramRuntimeActionKind(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class TelegramRuntimeFollowUpSend:
+    """Additional outbound text after the primary rendered message (same update, same chat)."""
+
+    message_text: str
+    reply_markup: Mapping[str, Any] | None
+
+
+@dataclass(frozen=True, slots=True)
 class TelegramRuntimeAction:
     """Single outbound action derived from a rendered package; no raw Telegram payload."""
 
@@ -33,7 +41,9 @@ class TelegramRuntimeAction:
     chat_id: int | None
     message_text: str | None
     action_keys: tuple[str, ...]
+    reply_markup: Mapping[str, Any] | None
     uc01_idempotency_key: str | None = None
+    follow_ups: tuple[TelegramRuntimeFollowUpSend, ...] = ()
 
 
 def extract_eligible_private_chat_id_from_telegram_like_update(
@@ -100,7 +110,9 @@ async def handle_slice1_telegram_update_to_runtime_action(
                 chat_id=None,
                 message_text=None,
                 action_keys=(),
+                reply_markup=None,
                 uc01_idempotency_key=None,
+                follow_ups=(),
             )
         rec = await ledger.get_status(idem_key)
         if rec is not None and rec.status == "sent" and rec.telegram_message_id is not None:
@@ -110,7 +122,9 @@ async def handle_slice1_telegram_update_to_runtime_action(
                 chat_id=None,
                 message_text=None,
                 action_keys=(),
+                reply_markup=None,
                 uc01_idempotency_key=None,
+                follow_ups=(),
             )
         if rec is None or rec.status != "pending":
             return TelegramRuntimeAction(
@@ -119,7 +133,9 @@ async def handle_slice1_telegram_update_to_runtime_action(
                 chat_id=None,
                 message_text=None,
                 action_keys=(),
+                reply_markup=None,
                 uc01_idempotency_key=None,
+                follow_ups=(),
             )
     if target is None or not rendered.message_text.strip():
         return TelegramRuntimeAction(
@@ -128,15 +144,23 @@ async def handle_slice1_telegram_update_to_runtime_action(
             chat_id=None,
             message_text=None,
             action_keys=(),
+            reply_markup=None,
             uc01_idempotency_key=None,
+            follow_ups=(),
         )
+    follow_ups = tuple(
+        TelegramRuntimeFollowUpSend(message_text=fu.message_text, reply_markup=fu.reply_markup)
+        for fu in rendered.follow_up_messages
+    )
     return TelegramRuntimeAction(
         kind=TelegramRuntimeActionKind.SEND_MESSAGE,
         correlation_id=cid,
         chat_id=target,
         message_text=rendered.message_text,
         action_keys=rendered.action_keys,
+        reply_markup=rendered.reply_markup,
         uc01_idempotency_key=idem_key,
+        follow_ups=follow_ups,
     )
 
 

@@ -13,6 +13,8 @@ separate webhook process only when you intentionally enable `TELEGRAM_WEBHOOK_HT
 - Run from `backend` directory.
 - `DATABASE_URL` must be set.
 - Set `SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS` to explicit opt-in value: `1`, `true`, or `yes`.
+- Ensure migrations are current through `backend/migrations/014_subscription_lifecycle_v1.sql`
+  before trusting lifecycle smoke evidence.
 - Use only isolated/dev database (never production or shared DB).
 
 ## Run
@@ -21,6 +23,7 @@ Minimal safe sequence (example values only, do not use real secrets in docs/hist
 ```bash
 export DATABASE_URL="postgresql://dev_user:dev_password@localhost:5432/dev_db"
 export SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS=1
+export SUBSCRIPTION_DEFAULT_PERIOD_DAYS=30
 python scripts/run_postgres_mvp_smoke.py
 ```
 

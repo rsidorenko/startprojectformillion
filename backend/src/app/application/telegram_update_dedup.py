@@ -16,6 +16,7 @@ class TelegramUpdateDedupGuard(Protocol):
     async def mark_if_first_seen(
         self,
         *,
+        namespace: str = "telegram_default",
         command_bucket: TelegramUpdateDedupCommandBucket,
         telegram_update_id: int,
     ) -> bool: ...
@@ -23,10 +24,11 @@ class TelegramUpdateDedupGuard(Protocol):
 
 def dedup_key_hash_for_update(
     *,
+    namespace: str = "telegram_default",
     command_bucket: TelegramUpdateDedupCommandBucket,
     telegram_update_id: int,
 ) -> str:
-    material = f"v1|{command_bucket}|{int(telegram_update_id)}"
+    material = f"v1|{namespace}|{command_bucket}|{int(telegram_update_id)}"
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
@@ -43,17 +45,18 @@ class InMemoryTelegramUpdateDedupGuard:
         self._ttl_seconds = float(ttl_seconds)
         self._max_entries = int(max_entries)
         self._now_seconds = now_seconds
-        self._seen: OrderedDict[tuple[str, int], float] = OrderedDict()
+        self._seen: OrderedDict[tuple[str, str, int], float] = OrderedDict()
 
     async def mark_if_first_seen(
         self,
         *,
+        namespace: str = "telegram_default",
         command_bucket: TelegramUpdateDedupCommandBucket,
         telegram_update_id: int,
     ) -> bool:
         now = float(self._now_seconds())
         self._evict_expired(now)
-        key = (command_bucket, int(telegram_update_id))
+        key = (namespace, command_bucket, int(telegram_update_id))
         if key in self._seen:
             self._seen.move_to_end(key)
             return False
@@ -81,8 +84,9 @@ class NoopTelegramUpdateDedupGuard:
     async def mark_if_first_seen(
         self,
         *,
+        namespace: str = "telegram_default",
         command_bucket: TelegramUpdateDedupCommandBucket,
         telegram_update_id: int,
     ) -> bool:
-        _ = (command_bucket, telegram_update_id)
+        _ = (namespace, command_bucket, telegram_update_id)
         return True

@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, cast, runtime_checkable
 
+from app.application.telegram_update_dedup import TelegramUpdateDedupCommandBucket
 from app.application.bootstrap import Slice1Composition
 from app.runtime.binding import process_raw_updates_with_bridge
 from app.runtime.bridge import RuntimeUpdateBridge
@@ -47,6 +48,7 @@ class TelegramRawPollingClient(Protocol):
         text: str,
         *,
         correlation_id: str,
+        reply_markup: Mapping[str, Any] | None = None,
     ) -> int:
         ...
 
@@ -78,14 +80,20 @@ class _PollingClientFromRaw:
         text: str,
         *,
         correlation_id: str,
+        reply_markup: Mapping[str, Any] | None = None,
     ) -> int:
-        return await self._raw.send_text_message(chat_id, text, correlation_id=correlation_id)
+        return await self._raw.send_text_message(
+            chat_id,
+            text,
+            correlation_id=correlation_id,
+            reply_markup=reply_markup,
+        )
 
 
 class Slice1RawPollingRuntime:
     """One-step raw fetch, then :func:`process_raw_updates_with_bridge` on inner :class:`Slice1PollingRuntime`."""
 
-    __slots__ = ("_bridge", "_config", "_current_offset", "_inner", "_raw_client")
+    __slots__ = ("_bridge", "_composition", "_config", "_current_offset", "_inner", "_raw_client")
 
     def __init__(
         self,
@@ -95,6 +103,7 @@ class Slice1RawPollingRuntime:
         *,
         config: PollingRuntimeConfig | None = None,
     ) -> None:
+        self._composition = composition
         self._raw_client = client
         self._bridge = bridge
         self._config = config or PollingRuntimeConfig()
@@ -105,6 +114,19 @@ class Slice1RawPollingRuntime:
     @property
     def current_offset(self) -> int | None:
         return self._current_offset
+
+    async def mark_update_first_seen(
+        self,
+        *,
+        namespace: str,
+        command_bucket: TelegramUpdateDedupCommandBucket,
+        telegram_update_id: int,
+    ) -> bool:
+        return await self._composition.telegram_update_dedup.mark_if_first_seen(
+            namespace=namespace,
+            command_bucket=command_bucket,
+            telegram_update_id=telegram_update_id,
+        )
 
     async def process_single_mapped_update(
         self,

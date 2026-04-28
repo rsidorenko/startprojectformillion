@@ -25,6 +25,7 @@ _EXPECTED_LEDGER_FILENAMES = (
     "011_issuance_state.sql",
     "012_adm02_ensure_access_audit_events.sql",
     "013_telegram_update_dedup.sql",
+    "014_subscription_lifecycle_v1.sql",
 )
 
 _SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
