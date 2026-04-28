@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, Protocol
 
 from app.security.errors import InternalErrorCategory
@@ -31,6 +32,7 @@ class SubscriptionSnapshot:
 
     internal_user_id: str
     state_label: str
+    active_until_utc: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)

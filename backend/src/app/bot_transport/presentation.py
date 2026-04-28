@@ -32,6 +32,7 @@ class TransportStatusCode(str, Enum):
     NEEDS_ONBOARDING = "needs_onboarding"
     INACTIVE_OR_NOT_ELIGIBLE = "inactive_or_not_eligible"
     NEEDS_REVIEW = "needs_review"
+    SUBSCRIPTION_EXPIRED = "subscription_expired"
     SUBSCRIPTION_ACTIVE = "subscription_active"
     SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY = "subscription_active_access_not_ready"
     SUBSCRIPTION_ACTIVE_ACCESS_READY = "subscription_active_access_ready"
@@ -75,6 +76,9 @@ class TransportSafeResponse:
     replay_suppresses_outbound: bool = False
     #: UC-01 success only: digest key aligned with ``idempotency_records`` for outbound delivery ledger.
     uc01_idempotency_key: str | None = None
+    active_until_ymd: str | None = None
+    #: UC-02 /status and /my_subscription: second outbound with success-style recovery copy (read-only).
+    subscription_active_recovery_followup: bool = False
 
 
 def _error_code_from_user_safe(code: UserSafeErrorCode | None) -> str:
@@ -109,6 +113,8 @@ def _status_code_for_safe_category(status: SafeUserStatusCategory) -> str:
         return TransportStatusCode.NEEDS_ONBOARDING.value
     if status is SafeUserStatusCategory.NEEDS_REVIEW:
         return TransportStatusCode.NEEDS_REVIEW.value
+    if status is SafeUserStatusCategory.SUBSCRIPTION_EXPIRED:
+        return TransportStatusCode.SUBSCRIPTION_EXPIRED.value
     if status is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY:
         return TransportStatusCode.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY.value
     if status is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_READY:
@@ -160,6 +166,9 @@ def map_get_subscription_status_to_transport(
             next_action_hint=None,
             replay_suppresses_outbound=False,
             uc01_idempotency_key=None,
+            active_until_ymd=(
+                result.active_until_utc.date().isoformat() if result.active_until_utc is not None else None
+            ),
         )
 
     if oc is OperationOutcomeCategory.NOT_FOUND:
