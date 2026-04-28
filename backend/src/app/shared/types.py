@@ -23,6 +23,7 @@ class SafeUserStatusCategory(str, Enum):
     NEEDS_BOOTSTRAP = "needs_bootstrap"
     INACTIVE_OR_NOT_ELIGIBLE = "inactive_or_not_eligible"
     NEEDS_REVIEW = "needs_review"
+    SUBSCRIPTION_EXPIRED = "subscription_expired"
     SUBSCRIPTION_ACTIVE = "subscription_active"
     SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY = "subscription_active_access_not_ready"
     SUBSCRIPTION_ACTIVE_ACCESS_READY = "subscription_active_access_ready"

@@ -51,6 +51,7 @@ def test_sorted_migration_sql_paths_repo_migrations_order() -> None:
         "011_issuance_state.sql",
         "012_adm02_ensure_access_audit_events.sql",
         "013_telegram_update_dedup.sql",
+        "014_subscription_lifecycle_v1.sql",
     ]
 
 
@@ -293,5 +294,27 @@ def test_telegram_update_dedup_migration_uses_only_safe_bounded_columns() -> Non
         "checkout_attempt_id",
         "schema_version",
         "token",
+    ):
+        assert forbidden not in lowered
+
+
+def test_subscription_lifecycle_migration_contract_safe_additive_columns() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "014_subscription_lifecycle_v1.sql"
+    ).read_text(encoding="utf-8")
+    lowered = migration.lower()
+
+    assert "alter table subscription_snapshots" in lowered
+    assert "add column if not exists active_until_utc timestamptz null" in lowered
+    assert "add column if not exists updated_at timestamptz not null default now()" in lowered
+
+    for forbidden in (
+        "drop table",
+        "drop column",
+        "truncate",
+        " delete from ",
+        "alter column",
     ):
         assert forbidden not in lowered

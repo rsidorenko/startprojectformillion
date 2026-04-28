@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from app.bot_transport.outbound import OutboundMessageKey, TelegramOutboundPlan
 
@@ -14,8 +15,10 @@ class RenderedMessagePackage:
     message_text: str
     action_keys: tuple[str, ...]
     correlation_id: str
+    reply_markup: dict[str, Any] | None = None
     replay_suppresses_outbound: bool = False
     uc01_idempotency_key: str | None = None
+    follow_up_messages: tuple["RenderedMessagePackage", ...] = ()
 
 
 def _text_service_unavailable() -> str:
@@ -38,6 +41,10 @@ _CATALOG_TEXT: dict[str, str] = {
     OutboundMessageKey.NEEDS_REVIEW.value: (
         "Access is temporarily restricted while a review is in place. You can use /status or /help. "
         "This build does not send files."
+    ),
+    OutboundMessageKey.SUBSCRIPTION_EXPIRED.value: (
+        "Your subscription has expired.\n"
+        "Use /renew to continue and then check /my_subscription again."
     ),
     OutboundMessageKey.SUBSCRIPTION_ACTIVE.value: (
         "Your subscription is active from the information this bot can read. "
@@ -110,11 +117,14 @@ def render_telegram_outbound_plan(plan: TelegramOutboundPlan) -> RenderedMessage
             correlation_id=plan.correlation_id,
             replay_suppresses_outbound=plan.replay_suppresses_outbound,
             uc01_idempotency_key=plan.uc01_idempotency_key,
+            follow_up_messages=(),
         )
     return RenderedMessagePackage(
         message_text=_CATALOG_TEXT[key],
         action_keys=_action_keys_from_plan(plan),
         correlation_id=plan.correlation_id,
+        reply_markup=None,
         replay_suppresses_outbound=plan.replay_suppresses_outbound,
         uc01_idempotency_key=plan.uc01_idempotency_key,
+        follow_up_messages=(),
     )

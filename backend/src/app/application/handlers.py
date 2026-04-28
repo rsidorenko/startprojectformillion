@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from app.application.interfaces import (
     AuditAppender,
@@ -69,6 +71,7 @@ class GetSubscriptionStatusResult:
     correlation_id: str
     safe_status: SafeUserStatusCategory
     user_safe: UserSafeErrorCode | None
+    active_until_utc: datetime | None = None
 
 
 def _snapshot_state_from_reader_label(state_label: str) -> SubscriptionSnapshotState:
@@ -282,10 +285,12 @@ class GetSubscriptionStatusHandler:
         identity: UserIdentityRepository,
         snapshots: SubscriptionSnapshotReader,
         issuance_state_lookup: IssuanceStateForResendLookup | None = None,
+        now_utc_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self._identity = identity
         self._snapshots = snapshots
         self._issuance_state_lookup = issuance_state_lookup
+        self._now_utc_provider = now_utc_provider or (lambda: datetime.now(UTC))
 
     async def handle(self, inp: GetSubscriptionStatusInput) -> GetSubscriptionStatusResult:
         cid = inp.correlation_id
@@ -349,6 +354,13 @@ class GetSubscriptionStatusHandler:
             state = _snapshot_state_from_reader_label(snap.state_label)
 
         safe = map_subscription_status_view(True, state)
+        active_until_utc = snap.active_until_utc if snap is not None else None
+        if (
+            safe is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE
+            and active_until_utc is not None
+            and self._now_utc_provider() > active_until_utc
+        ):
+            safe = SafeUserStatusCategory.SUBSCRIPTION_EXPIRED
         if safe is SafeUserStatusCategory.SUBSCRIPTION_ACTIVE:
             lookup = self._issuance_state_lookup
             if lookup is None:
@@ -379,4 +391,5 @@ class GetSubscriptionStatusHandler:
             correlation_id=cid,
             safe_status=safe,
             user_safe=None,
+            active_until_utc=active_until_utc,
         )

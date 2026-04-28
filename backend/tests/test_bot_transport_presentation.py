@@ -184,6 +184,8 @@ def test_transport_response_has_no_outcome_or_internal_fields() -> None:
         "next_action_hint",
         "replay_suppresses_outbound",
         "uc01_idempotency_key",
+        "active_until_ymd",
+        "subscription_active_recovery_followup",
     }
 
 

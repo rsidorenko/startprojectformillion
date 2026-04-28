@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Callable, Protocol
 
@@ -74,6 +75,10 @@ class IssuanceStateForResendLookup(Protocol):
     async def get_current_for_user(self, internal_user_id: str) -> IssuanceCurrentStateRef | None: ...
 
 
+class IssuanceStateForResendMutation(Protocol):
+    async def mark_revoked(self, *, internal_user_id: str, issue_idempotency_key: str) -> object | None: ...
+
+
 class AccessResendCooldownStore(Protocol):
     async def consume_or_reject(self, internal_user_id: str, now_epoch_seconds: float) -> bool: ...
 
@@ -124,18 +129,22 @@ class TelegramAccessResendHandler:
         issuance_service: IssuanceService | None,
         issuance_state_lookup: IssuanceStateForResendLookup | None,
         cooldown: AccessResendCooldownStore,
+        issuance_state_mutation: IssuanceStateForResendMutation | None = None,
         disabled_hit_marker: TelegramAccessResendDisabledHitMarker | None = None,
         enabled: bool,
         now_seconds: Callable[[], float] = time.time,
+        now_utc: Callable[[], datetime] | None = None,
     ) -> None:
         self._identity = identity
         self._snapshots = snapshots
         self._issuance_service = issuance_service
         self._issuance_state_lookup = issuance_state_lookup
+        self._issuance_state_mutation = issuance_state_mutation
         self._cooldown = cooldown
         self._disabled_hit_marker = disabled_hit_marker or NoopTelegramAccessResendDisabledHitMarker()
         self._enabled = enabled
         self._now_seconds = now_seconds
+        self._now_utc = now_utc or (lambda: datetime.now(UTC))
 
     async def handle(self, inp: TelegramAccessResendInput) -> TelegramAccessResendResult:
         cid = inp.correlation_id
@@ -174,6 +183,23 @@ class TelegramAccessResendHandler:
             )
         state = _snapshot_state_from_reader_label(snapshot.state_label)
         if state is not SubscriptionSnapshotState.ACTIVE:
+            return TelegramAccessResendResult(
+                outcome=TelegramAccessResendOutcome.NOT_ELIGIBLE,
+                correlation_id=cid,
+            )
+        if snapshot.active_until_utc is not None and self._now_utc() > snapshot.active_until_utc:
+            # Best-effort local durable revoke for already-issued access when lifecycle is expired.
+            # This preserves fail-closed behavior even if revoke mutation fails.
+            if self._issuance_state_lookup is not None and self._issuance_state_mutation is not None:
+                try:
+                    current = await self._issuance_state_lookup.get_current_for_user(identity.internal_user_id)
+                    if current is not None and not current.is_revoked:
+                        await self._issuance_state_mutation.mark_revoked(
+                            internal_user_id=identity.internal_user_id,
+                            issue_idempotency_key=current.issue_idempotency_key,
+                        )
+                except Exception:
+                    pass
             return TelegramAccessResendResult(
                 outcome=TelegramAccessResendOutcome.NOT_ELIGIBLE,
                 correlation_id=cid,

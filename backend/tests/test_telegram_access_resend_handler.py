@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from app.application.interfaces import IdentityRecord, SubscriptionSnapshot
@@ -45,6 +47,19 @@ class _StateLookup:
     async def get_current_for_user(self, internal_user_id: str) -> IssuanceCurrentStateRef | None:
         self.calls += 1
         return self._state
+
+
+class _StateMutationSpy:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.last_internal_user_id: str | None = None
+        self.last_issue_idempotency_key: str | None = None
+
+    async def mark_revoked(self, *, internal_user_id: str, issue_idempotency_key: str) -> object | None:
+        self.calls += 1
+        self.last_internal_user_id = internal_user_id
+        self.last_issue_idempotency_key = issue_idempotency_key
+        return object()
 
 
 class _ServiceSpy:
@@ -104,6 +119,7 @@ async def test_active_entitled_calls_issuance_resend() -> None:
         issuance_state_lookup=_StateLookup(
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
+        issuance_state_mutation=None,
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
         disabled_hit_marker=marker,
         enabled=True,
@@ -129,6 +145,7 @@ async def test_non_active_entitlement_no_issuance_call(state_label: str) -> None
         issuance_state_lookup=_StateLookup(
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
+        issuance_state_mutation=None,
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
         enabled=True,
         now_seconds=lambda: 1.0,
@@ -148,6 +165,7 @@ async def test_unknown_user_is_safe_denial_no_issuance_call() -> None:
         issuance_state_lookup=_StateLookup(
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
+        issuance_state_mutation=None,
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
         enabled=True,
     )
@@ -166,6 +184,7 @@ async def test_missing_snapshot_is_safe_denial_no_issuance_call() -> None:
         issuance_state_lookup=_StateLookup(
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
+        issuance_state_mutation=None,
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
         enabled=True,
     )
@@ -184,6 +203,7 @@ async def test_cooldown_hit_blocks_issuance_call() -> None:
         issuance_state_lookup=_StateLookup(
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
+        issuance_state_mutation=None,
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
         enabled=True,
         now_seconds=lambda: 100.0,
@@ -216,6 +236,7 @@ async def test_issuance_outcomes_map_to_safe_handler_outcomes(
         issuance_state_lookup=_StateLookup(
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False)
         ),
+        issuance_state_mutation=None,
         cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=0),
         enabled=True,
     )
@@ -242,6 +263,7 @@ async def test_flag_disabled_short_circuits_before_entitlement_cooldown_and_issu
         snapshots=snapshots,
         issuance_service=service,  # type: ignore[arg-type]
         issuance_state_lookup=state_lookup,
+        issuance_state_mutation=None,
         cooldown=cooldown,
         disabled_hit_marker=marker,
         enabled=False,
@@ -314,6 +336,7 @@ async def test_disabled_marker_records_bounded_source_command(
         issuance_state_lookup=_StateLookup(
             IssuanceCurrentStateRef(issue_idempotency_key="issue-1", is_revoked=False),
         ),
+        issuance_state_mutation=None,
         cooldown=_CooldownSpy(allowed=True),
         disabled_hit_marker=marker,
         enabled=False,
@@ -323,3 +346,57 @@ async def test_disabled_marker_records_bounded_source_command(
     assert marker.calls == 1
     assert marker.events[0].source_command is source
     assert marker.events[0].source_command.value == expected
+
+
+@pytest.mark.asyncio
+async def test_expired_subscription_denies_and_marks_existing_issued_access_revoked() -> None:
+    service = _ServiceSpy(IssuanceServiceResult(category=IssuanceOutcomeCategory.DELIVERY_READY))
+    mutation = _StateMutationSpy()
+    h = TelegramAccessResendHandler(
+        identity=_IdentityRepo(IdentityRecord(internal_user_id="u42", telegram_user_id=42)),
+        snapshots=_Snapshots(
+            SubscriptionSnapshot(
+                internal_user_id="u42",
+                state_label="active",
+                active_until_utc=datetime.now(UTC) - timedelta(days=1),
+            )
+        ),
+        issuance_service=service,  # type: ignore[arg-type]
+        issuance_state_lookup=_StateLookup(
+            IssuanceCurrentStateRef(issue_idempotency_key="issue-42", is_revoked=False)
+        ),
+        issuance_state_mutation=mutation,
+        cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
+        enabled=True,
+    )
+    out = await h.handle(_inp(update_id=808))
+    assert out.outcome is TelegramAccessResendOutcome.NOT_ELIGIBLE
+    assert mutation.calls == 1
+    assert mutation.last_internal_user_id == "u42"
+    assert mutation.last_issue_idempotency_key == "issue-42"
+    assert service.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_expired_subscription_does_not_mutate_when_current_state_already_revoked() -> None:
+    mutation = _StateMutationSpy()
+    h = TelegramAccessResendHandler(
+        identity=_IdentityRepo(IdentityRecord(internal_user_id="u42", telegram_user_id=42)),
+        snapshots=_Snapshots(
+            SubscriptionSnapshot(
+                internal_user_id="u42",
+                state_label="active",
+                active_until_utc=datetime.now(UTC) - timedelta(days=1),
+            )
+        ),
+        issuance_service=_ServiceSpy(IssuanceServiceResult(category=IssuanceOutcomeCategory.DELIVERY_READY)),  # type: ignore[arg-type]
+        issuance_state_lookup=_StateLookup(
+            IssuanceCurrentStateRef(issue_idempotency_key="issue-42", is_revoked=True)
+        ),
+        issuance_state_mutation=mutation,
+        cooldown=InMemoryAccessResendCooldownStore(cooldown_seconds=60),
+        enabled=True,
+    )
+    out = await h.handle(_inp(update_id=809))
+    assert out.outcome is TelegramAccessResendOutcome.NOT_ELIGIBLE
+    assert mutation.calls == 0

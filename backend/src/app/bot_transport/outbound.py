@@ -35,6 +35,7 @@ class OutboundMessageKey(str, Enum):
     NEEDS_ONBOARDING = "needs_onboarding"
     INACTIVE_OR_NOT_ELIGIBLE = "inactive_or_not_eligible"
     NEEDS_REVIEW = "needs_review"
+    SUBSCRIPTION_EXPIRED = "subscription_expired"
     SUBSCRIPTION_ACTIVE = "subscription_active"
     SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY = "subscription_active_access_not_ready"
     SUBSCRIPTION_ACTIVE_ACCESS_READY = "subscription_active_access_ready"
@@ -73,6 +74,7 @@ class TelegramOutboundPlan:
     correlation_id: str
     replay_suppresses_outbound: bool = False
     uc01_idempotency_key: str | None = None
+    active_until_ymd: str | None = None
 
 
 def _error_plan(
@@ -116,6 +118,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 correlation_id=cid,
                 replay_suppresses_outbound=transport.replay_suppresses_outbound,
                 uc01_idempotency_key=transport.uc01_idempotency_key,
+                active_until_ymd=transport.active_until_ymd,
             )
         if code == TransportHelpCode.SLICE1_HELP.value:
             return TelegramOutboundPlan(
@@ -126,6 +129,17 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 correlation_id=cid,
                 replay_suppresses_outbound=False,
                 uc01_idempotency_key=None,
+                active_until_ymd=transport.active_until_ymd,
+            )
+        if code == TransportStatusCode.SUBSCRIPTION_EXPIRED.value:
+            return TelegramOutboundPlan(
+                category=OutboundPlanCategory.SUCCESS,
+                message_key=OutboundMessageKey.SUBSCRIPTION_EXPIRED.value,
+                next_action_key=None,
+                keyboard_marker=OutboundKeyboardMarker.NONE.value,
+                correlation_id=cid,
+                uc01_idempotency_key=None,
+                active_until_ymd=transport.active_until_ymd,
             )
         if code == TransportAccessResendCode.RESEND_ACCEPTED.value:
             return TelegramOutboundPlan(
@@ -189,6 +203,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,
                 uc01_idempotency_key=None,
+                active_until_ymd=transport.active_until_ymd,
             )
         if code == TransportStatusCode.NEEDS_REVIEW.value:
             return TelegramOutboundPlan(
@@ -198,6 +213,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,
                 uc01_idempotency_key=None,
+                active_until_ymd=transport.active_until_ymd,
             )
         if code == TransportStatusCode.SUBSCRIPTION_ACTIVE.value:
             return TelegramOutboundPlan(
@@ -207,6 +223,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,
                 uc01_idempotency_key=None,
+                active_until_ymd=transport.active_until_ymd,
             )
         if code == TransportStatusCode.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY.value:
             return TelegramOutboundPlan(
@@ -216,6 +233,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,
                 uc01_idempotency_key=None,
+                active_until_ymd=transport.active_until_ymd,
             )
         if code == TransportStatusCode.SUBSCRIPTION_ACTIVE_ACCESS_READY.value:
             return TelegramOutboundPlan(
@@ -225,6 +243,7 @@ def map_transport_safe_to_outbound_plan(transport: TransportSafeResponse) -> Tel
                 keyboard_marker=OutboundKeyboardMarker.NONE.value,
                 correlation_id=cid,
                 uc01_idempotency_key=None,
+                active_until_ymd=transport.active_until_ymd,
             )
         return _service_unavailable_plan(cid)
 

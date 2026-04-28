@@ -19,7 +19,7 @@ class PostgresSubscriptionSnapshotReader:
             async with self._pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
-                    SELECT internal_user_id, state_label
+                    SELECT internal_user_id, state_label, active_until_utc
                     FROM subscription_snapshots
                     WHERE internal_user_id = $1::text
                     """,
@@ -32,6 +32,7 @@ class PostgresSubscriptionSnapshotReader:
         return SubscriptionSnapshot(
             internal_user_id=row["internal_user_id"],
             state_label=row["state_label"],
+            active_until_utc=row["active_until_utc"],
         )
 
     async def put_if_absent(self, snapshot: SubscriptionSnapshot) -> None:
@@ -39,21 +40,24 @@ class PostgresSubscriptionSnapshotReader:
             async with self._pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO subscription_snapshots (internal_user_id, state_label)
-                    VALUES ($1::text, $2::text)
+                    INSERT INTO subscription_snapshots (internal_user_id, state_label, active_until_utc)
+                    VALUES ($1::text, $2::text, $3::timestamptz)
                     ON CONFLICT (internal_user_id) DO NOTHING
                     """,
                     snapshot.internal_user_id,
                     snapshot.state_label,
+                    snapshot.active_until_utc,
                 )
         except (asyncpg.PostgresError, OSError) as exc:
             raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
 
     _UPSERT_STATE = """
-        INSERT INTO subscription_snapshots (internal_user_id, state_label)
-        VALUES ($1::text, $2::text)
+        INSERT INTO subscription_snapshots (internal_user_id, state_label, active_until_utc)
+        VALUES ($1::text, $2::text, $3::timestamptz)
         ON CONFLICT (internal_user_id) DO UPDATE
-        SET state_label = EXCLUDED.state_label
+        SET state_label = EXCLUDED.state_label,
+            active_until_utc = EXCLUDED.active_until_utc,
+            updated_at = now()
     """
 
     @staticmethod
@@ -66,6 +70,7 @@ class PostgresSubscriptionSnapshotReader:
                 PostgresSubscriptionSnapshotReader._UPSERT_STATE,
                 snapshot.internal_user_id,
                 snapshot.state_label,
+                snapshot.active_until_utc,
             )
         except (asyncpg.PostgresError, OSError) as exc:
             raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
