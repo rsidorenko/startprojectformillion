@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
+from datetime import UTC, datetime
+from typing import Literal
 
 from app.application.bootstrap import Slice1Composition
+from app.application.handlers import GetSubscriptionStatusInput
 from app.application.telegram_command_rate_limit import TelegramCommandRateLimitKey
 from app.application.telegram_command_rate_limit_telemetry import (
     TelegramCommandRateLimitDecisionEvent,
@@ -15,8 +19,14 @@ from app.application.telegram_command_rate_limit_telemetry import (
 from app.bot_transport.normalized import (
     NormalizedSlice1Bootstrap,
     NormalizedSlice1Help,
+    NormalizedSlice1Buy,
+    NormalizedSlice1Plans,
     NormalizedSlice1Rejected,
     NormalizedSlice1ResendAccess,
+    NormalizedSlice1Renew,
+    NormalizedSlice1Success,
+    NormalizedSlice1SupportContact,
+    NormalizedSlice1SupportMenu,
     NormalizedSlice1Status,
     TransportIncomingEnvelope,
     parse_slice1_transport,
@@ -29,7 +39,12 @@ from app.bot_transport.presentation import (
     map_access_resend_to_transport,
     map_get_subscription_status_to_transport,
     map_slice1_help_to_transport,
+    map_slice1_storefront_to_transport,
+    map_slice1_support_to_transport,
+    TransportStorefrontCode,
+    TransportSupportCode,
 )
+from app.shared.types import OperationOutcomeCategory, SafeUserStatusCategory
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -100,6 +115,70 @@ async def dispatch_slice1_transport(
             return _normalization_reject_response(envelope)
         case NormalizedSlice1Help(correlation_id=help_cid):
             return map_slice1_help_to_transport(help_cid)
+        case NormalizedSlice1Plans(correlation_id=cid):
+            return map_slice1_storefront_to_transport(TransportStorefrontCode.STORE_PLANS, cid)
+        case NormalizedSlice1Buy(correlation_id=cid):
+            return map_slice1_storefront_to_transport(TransportStorefrontCode.STORE_BUY, cid)
+        case NormalizedSlice1Success(correlation_id=cid):
+            status_result = await composition.get_status.handle(
+                GetSubscriptionStatusInput(
+                    telegram_user_id=envelope.telegram_user_id,
+                    correlation_id=cid,
+                )
+            )
+            if status_result.safe_status in (
+                SafeUserStatusCategory.SUBSCRIPTION_ACTIVE,
+                SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY,
+                SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_READY,
+            ):
+                return map_slice1_storefront_to_transport(TransportStorefrontCode.STORE_SUCCESS_ACTIVE, cid)
+            return map_slice1_storefront_to_transport(TransportStorefrontCode.STORE_SUCCESS, cid)
+        case NormalizedSlice1Renew(correlation_id=cid):
+            return map_slice1_storefront_to_transport(TransportStorefrontCode.STORE_RENEW, cid)
+        case NormalizedSlice1SupportMenu(correlation_id=cid):
+            allowed = await composition.command_rate_limiter.allow(
+                telegram_user_id=envelope.telegram_user_id,
+                command_key=TelegramCommandRateLimitKey.SUPPORT,
+            )
+            if not allowed:
+                await _emit_rate_limit_decision(
+                    composition,
+                    envelope=envelope,
+                    command_key=TelegramCommandRateLimitKey.SUPPORT,
+                    decision="limited",
+                    correlation_id=cid,
+                )
+                return _rate_limited_response(cid)
+            await _emit_rate_limit_decision(
+                composition,
+                envelope=envelope,
+                command_key=TelegramCommandRateLimitKey.SUPPORT,
+                decision="allowed",
+                correlation_id=cid,
+            )
+            return map_slice1_support_to_transport(TransportSupportCode.SUPPORT_MENU, cid)
+        case NormalizedSlice1SupportContact(correlation_id=cid):
+            allowed = await composition.command_rate_limiter.allow(
+                telegram_user_id=envelope.telegram_user_id,
+                command_key=TelegramCommandRateLimitKey.SUPPORT,
+            )
+            if not allowed:
+                await _emit_rate_limit_decision(
+                    composition,
+                    envelope=envelope,
+                    command_key=TelegramCommandRateLimitKey.SUPPORT,
+                    decision="limited",
+                    correlation_id=cid,
+                )
+                return _rate_limited_response(cid)
+            await _emit_rate_limit_decision(
+                composition,
+                envelope=envelope,
+                command_key=TelegramCommandRateLimitKey.SUPPORT,
+                decision="allowed",
+                correlation_id=cid,
+            )
+            return map_slice1_support_to_transport(TransportSupportCode.SUPPORT_CONTACT, cid)
         case NormalizedSlice1Bootstrap(input=bootstrap_input):
             result = await composition.bootstrap.handle(bootstrap_input)
             return map_bootstrap_identity_to_transport(result)
@@ -125,7 +204,20 @@ async def dispatch_slice1_transport(
                 correlation_id=status_input.correlation_id,
             )
             result = await composition.get_status.handle(status_input)
-            return map_get_subscription_status_to_transport(result)
+            transport = map_get_subscription_status_to_transport(result)
+            if (
+                result.outcome is OperationOutcomeCategory.SUCCESS
+                and result.active_until_utc is not None
+                and result.active_until_utc > datetime.now(UTC)
+                and result.safe_status
+                in (
+                    SafeUserStatusCategory.SUBSCRIPTION_ACTIVE,
+                    SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY,
+                    SafeUserStatusCategory.SUBSCRIPTION_ACTIVE_ACCESS_READY,
+                )
+            ):
+                return replace(transport, subscription_active_recovery_followup=True)
+            return transport
         case NormalizedSlice1ResendAccess(input=resend_input):
             allowed = await composition.command_rate_limiter.allow(
                 telegram_user_id=envelope.telegram_user_id,

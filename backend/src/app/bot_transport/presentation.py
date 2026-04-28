@@ -53,6 +53,22 @@ class TransportHelpCode(str, Enum):
     SLICE1_HELP = "slice1_help"
 
 
+class TransportStorefrontCode(str, Enum):
+    STORE_MENU = "store_menu"
+    STORE_PLANS = "store_plans"
+    STORE_BUY = "store_buy"
+    STORE_SUCCESS = "store_success"
+    STORE_SUCCESS_ACTIVE = "store_success_active"
+    STORE_RENEW = "store_renew"
+
+
+class TransportSupportCode(str, Enum):
+    """Read-only support surfaces; no billing or issuance."""
+
+    SUPPORT_MENU = "support_menu"
+    SUPPORT_CONTACT = "support_contact"
+
+
 class TransportAccessResendCode(str, Enum):
     NOT_ENABLED = "resend_access_not_enabled"
     RESEND_ACCEPTED = "resend_access_accepted"
@@ -144,6 +160,35 @@ def map_slice1_help_to_transport(correlation_id: str) -> TransportSafeResponse:
     return TransportSafeResponse(
         category=TransportResponseCategory.SUCCESS,
         code=TransportHelpCode.SLICE1_HELP.value,
+        correlation_id=correlation_id,
+        next_action_hint=None,
+        replay_suppresses_outbound=False,
+        uc01_idempotency_key=None,
+    )
+
+
+def map_slice1_storefront_to_transport(
+    code: TransportStorefrontCode,
+    correlation_id: str,
+) -> TransportSafeResponse:
+    return TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=code.value,
+        correlation_id=correlation_id,
+        next_action_hint=None,
+        replay_suppresses_outbound=False,
+        uc01_idempotency_key=None,
+    )
+
+
+def map_slice1_support_to_transport(
+    code: TransportSupportCode,
+    correlation_id: str,
+) -> TransportSafeResponse:
+    """Map read-only /support and /support_contact to transport (no handlers)."""
+    return TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=code.value,
         correlation_id=correlation_id,
         next_action_hint=None,
         replay_suppresses_outbound=False,

@@ -19,6 +19,8 @@ from app.bot_transport.presentation import (
     TransportErrorCode,
     TransportResponseCategory,
     TransportSafeResponse,
+    TransportStorefrontCode,
+    TransportSupportCode,
     TransportStatusCode,
     map_bootstrap_identity_to_transport,
     map_get_subscription_status_to_transport,
@@ -54,6 +56,7 @@ def test_help_read_only_outbound_message_key() -> None:
     safe = map_slice1_help_to_transport(cid)
     plan = map_transport_safe_to_outbound_plan(safe)
     assert plan.message_key == OutboundMessageKey.SLICE1_HELP.value
+    assert plan.keyboard_marker == OutboundKeyboardMarker.STOREFRONT_MAIN.value
     assert plan.replay_suppresses_outbound is False
     assert plan.uc01_idempotency_key is None
     assert plan.correlation_id == cid
@@ -352,3 +355,55 @@ def test_resend_transport_codes_map_to_safe_outbound_keys() -> None:
     )
     plan2 = map_transport_safe_to_outbound_plan(safe_cooldown)
     assert plan2.message_key == OutboundMessageKey.RESEND_ACCESS_COOLDOWN.value
+
+
+def test_storefront_transport_codes_map_to_outbound_keys() -> None:
+    cid = new_correlation_id()
+    safe_plans = TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportStorefrontCode.STORE_PLANS.value,
+        correlation_id=cid,
+    )
+    safe_buy = TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportStorefrontCode.STORE_BUY.value,
+        correlation_id=cid,
+    )
+    safe_success = TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportStorefrontCode.STORE_SUCCESS.value,
+        correlation_id=cid,
+    )
+    safe_success_active = TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportStorefrontCode.STORE_SUCCESS_ACTIVE.value,
+        correlation_id=cid,
+    )
+    safe_renew = TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportStorefrontCode.STORE_RENEW.value,
+        correlation_id=cid,
+    )
+    safe_support_menu = TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportSupportCode.SUPPORT_MENU.value,
+        correlation_id=cid,
+    )
+    safe_support_contact = TransportSafeResponse(
+        category=TransportResponseCategory.SUCCESS,
+        code=TransportSupportCode.SUPPORT_CONTACT.value,
+        correlation_id=cid,
+    )
+    assert map_transport_safe_to_outbound_plan(safe_plans).message_key == OutboundMessageKey.STORE_PLANS.value
+    assert map_transport_safe_to_outbound_plan(safe_buy).message_key == OutboundMessageKey.STORE_BUY.value
+    assert map_transport_safe_to_outbound_plan(safe_success).message_key == OutboundMessageKey.STORE_SUCCESS.value
+    assert (
+        map_transport_safe_to_outbound_plan(safe_success_active).message_key
+        == OutboundMessageKey.STORE_SUCCESS_ACTIVE.value
+    )
+    assert map_transport_safe_to_outbound_plan(safe_renew).message_key == OutboundMessageKey.STORE_RENEW.value
+    assert map_transport_safe_to_outbound_plan(safe_support_menu).message_key == OutboundMessageKey.SUPPORT_MENU.value
+    assert (
+        map_transport_safe_to_outbound_plan(safe_support_contact).message_key
+        == OutboundMessageKey.SUPPORT_CONTACT.value
+    )

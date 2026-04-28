@@ -28,8 +28,6 @@ from tests.slice1_expected_user_copy import (
     RESEND_ACCESS_NOT_READY_TEXT,
     RESEND_ACCESS_TEMPORARILY_UNAVAILABLE_TEXT,
     SLICE1_HELP_TEXT,
-    SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY_TEXT,
-    SUBSCRIPTION_ACTIVE_ACCESS_READY_TEXT,
     TELEGRAM_COMMAND_RATE_LIMITED_TEXT,
 )
 
@@ -79,6 +77,7 @@ def _plan(
     keyboard_marker: str = OutboundKeyboardMarker.NONE.value,
     correlation_id: str = _CID,
     replay_suppresses_outbound: bool = False,
+    active_until_ymd: str | None = None,
 ) -> TelegramOutboundPlan:
     return TelegramOutboundPlan(
         category=category,
@@ -87,6 +86,7 @@ def _plan(
         keyboard_marker=keyboard_marker,
         correlation_id=correlation_id,
         replay_suppresses_outbound=replay_suppresses_outbound,
+        active_until_ymd=active_until_ymd,
     )
 
 
@@ -185,40 +185,64 @@ def test_needs_review_safe_no_internals() -> None:
     _assert_no_dsn_or_secretish(out.message_text)
 
 
+def test_subscription_active_confirmation_copy_safe() -> None:
+    plan = _plan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=OutboundMessageKey.SUBSCRIPTION_ACTIVE_CONFIRMATION.value,
+        keyboard_marker=OutboundKeyboardMarker.FULFILLMENT_SUCCESS.value,
+        active_until_ymd="2026-12-31",
+    )
+    out = render_telegram_outbound_plan(plan)
+    lowered = out.message_text.lower()
+    assert "active" in lowered
+    assert "2026-12-31" in out.message_text
+    for needle in ("token", "secret", "reference", "signature"):
+        assert needle not in lowered
+    assert "/get_access" in out.message_text
+    assert "/menu" in out.message_text
+    _assert_no_dsn_or_secretish(out.message_text)
+    _assert_plain_text_no_markup(out.message_text)
+
+
 def test_subscription_active_renders_without_billing_internals() -> None:
     plan = _plan(
         category=OutboundPlanCategory.SUCCESS,
         message_key=OutboundMessageKey.SUBSCRIPTION_ACTIVE.value,
+        active_until_ymd="2026-05-27",
     )
     out = render_telegram_outbound_plan(plan)
-    assert "active" in out.message_text.lower()
+    assert "active until" in out.message_text.lower()
     assert "provider" not in out.message_text.lower()
     _assert_no_dsn_or_secretish(out.message_text)
 
 
+def test_subscription_expired_copy_contains_renew_cta() -> None:
+    plan = _plan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=OutboundMessageKey.SUBSCRIPTION_EXPIRED.value,
+    )
+    out = render_telegram_outbound_plan(plan)
+    assert "expired" in out.message_text.lower()
+    assert "/renew" in out.message_text
+
+
 @pytest.mark.parametrize(
-    ("message_key", "expected_text"),
+    "message_key",
     (
-        (
-            OutboundMessageKey.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY.value,
-            SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY_TEXT,
-        ),
-        (
-            OutboundMessageKey.SUBSCRIPTION_ACTIVE_ACCESS_READY.value,
-            SUBSCRIPTION_ACTIVE_ACCESS_READY_TEXT,
-        ),
+        OutboundMessageKey.SUBSCRIPTION_ACTIVE_ACCESS_NOT_READY.value,
+        OutboundMessageKey.SUBSCRIPTION_ACTIVE_ACCESS_READY.value,
     ),
 )
 def test_subscription_access_readiness_messages_are_safe(
     message_key: str,
-    expected_text: str,
 ) -> None:
     plan = _plan(
         category=OutboundPlanCategory.SUCCESS,
         message_key=message_key,
+        active_until_ymd="2026-05-27",
     )
     out = render_telegram_outbound_plan(plan)
-    assert out.message_text == expected_text
+    assert "active until" in out.message_text.lower()
     assert "/get_access" in out.message_text
     _assert_no_dsn_or_secretish(out.message_text)
 
@@ -294,6 +318,7 @@ def test_help_message_render() -> None:
     plan = _plan(
         category=OutboundPlanCategory.SUCCESS,
         message_key=OutboundMessageKey.SLICE1_HELP.value,
+        keyboard_marker=OutboundKeyboardMarker.STOREFRONT_MAIN.value,
     )
     out = render_telegram_outbound_plan(plan)
     assert out.message_text == SLICE1_HELP_TEXT
@@ -301,10 +326,24 @@ def test_help_message_render() -> None:
     assert "/start" in out.message_text
     _assert_no_dsn_or_secretish(out.message_text)
     _assert_plain_text_no_markup(out.message_text)
+    assert out.reply_markup is not None
+    assert "keyboard" in out.reply_markup
 
 
 def test_catalog_outputs_cover_secret_and_markup_policy() -> None:
     """Predefined catalog strings avoid DSN/secret-style fragments and HTML-ish markup."""
+    # Keep deterministic output independent from developer machine env.
+    import os
+
+    for k in (
+        "TELEGRAM_STOREFRONT_PLAN_NAME",
+        "TELEGRAM_STOREFRONT_PLAN_PRICE",
+        "TELEGRAM_STOREFRONT_CHECKOUT_URL",
+        "TELEGRAM_STOREFRONT_RENEWAL_URL",
+        "TELEGRAM_STOREFRONT_SUPPORT_URL",
+        "TELEGRAM_STOREFRONT_SUPPORT_HANDLE",
+    ):
+        os.environ.pop(k, None)
     for mk in OutboundMessageKey:
         p = _plan(
             category=OutboundPlanCategory.SUCCESS,
@@ -344,6 +383,17 @@ def test_resend_access_catalog_strings_are_safe(message_key: str, expected_text:
 
 def test_all_catalog_messages_forbid_doc35_g_instruction_class_material() -> None:
     """Contract: every catalog entry stays within doc 35 §G (no instruction-class delivery material)."""
+    import os
+
+    for k in (
+        "TELEGRAM_STOREFRONT_PLAN_NAME",
+        "TELEGRAM_STOREFRONT_PLAN_PRICE",
+        "TELEGRAM_STOREFRONT_CHECKOUT_URL",
+        "TELEGRAM_STOREFRONT_RENEWAL_URL",
+        "TELEGRAM_STOREFRONT_SUPPORT_URL",
+        "TELEGRAM_STOREFRONT_SUPPORT_HANDLE",
+    ):
+        os.environ.pop(k, None)
     for mk in OutboundMessageKey:
         plan = _plan(
             category=OutboundPlanCategory.SUCCESS,
@@ -354,3 +404,133 @@ def test_all_catalog_messages_forbid_doc35_g_instruction_class_material() -> Non
         _assert_no_dsn_or_secretish(text)
         _assert_plain_text_no_markup(text)
     assert "instructions" in RESEND_ACCESS_ACCEPTED_TEXT.lower()
+
+
+def test_storefront_plans_fallback_copy(monkeypatch) -> None:
+    monkeypatch.delenv("TELEGRAM_STOREFRONT_PLAN_NAME", raising=False)
+    monkeypatch.delenv("TELEGRAM_STOREFRONT_PLAN_PRICE", raising=False)
+    plan = _plan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=OutboundMessageKey.STORE_PLANS.value,
+        keyboard_marker=OutboundKeyboardMarker.STOREFRONT_MAIN.value,
+    )
+    out = render_telegram_outbound_plan(plan)
+    assert "Current price is shown at checkout" in out.message_text
+    assert out.reply_markup is not None
+
+
+def test_storefront_plans_uses_configured_name_and_price(monkeypatch) -> None:
+    monkeypatch.setenv("TELEGRAM_STOREFRONT_PLAN_NAME", "VPN Monthly")
+    monkeypatch.setenv("TELEGRAM_STOREFRONT_PLAN_PRICE", "$9.99")
+    plan = _plan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=OutboundMessageKey.STORE_PLANS.value,
+        keyboard_marker=OutboundKeyboardMarker.STOREFRONT_MAIN.value,
+    )
+    out = render_telegram_outbound_plan(plan)
+    assert "VPN Monthly" in out.message_text
+    assert "$9.99" in out.message_text
+
+
+def test_storefront_buy_missing_or_invalid_checkout_fails_closed(monkeypatch) -> None:
+    plan = _plan(category=OutboundPlanCategory.SUCCESS, message_key=OutboundMessageKey.STORE_BUY.value)
+    monkeypatch.delenv("TELEGRAM_STOREFRONT_CHECKOUT_URL", raising=False)
+    out_missing = render_telegram_outbound_plan(plan)
+    assert out_missing.message_text == "Checkout is not configured yet, contact support."
+    monkeypatch.setenv("TELEGRAM_STOREFRONT_CHECKOUT_URL", "http://example.com/pay")
+    out_invalid = render_telegram_outbound_plan(plan)
+    assert out_invalid.message_text == "Checkout is not configured yet, contact support."
+    monkeypatch.setenv("TELEGRAM_STOREFRONT_CHECKOUT_URL", "https://example.com/pay?signature=abc")
+    monkeypatch.setenv("TELEGRAM_CHECKOUT_REFERENCE_SECRET", "Checkout_Secret_1234567890_ABC")
+    out_unsafe_query = render_telegram_outbound_plan(plan, telegram_user_id=12345)
+    assert out_unsafe_query.message_text == "Checkout is not configured yet, contact support."
+
+
+def test_storefront_buy_uses_valid_checkout_url(monkeypatch) -> None:
+    monkeypatch.setenv("TELEGRAM_STOREFRONT_CHECKOUT_URL", "https://example.com/checkout")
+    monkeypatch.setenv("TELEGRAM_CHECKOUT_REFERENCE_SECRET", "Checkout_Secret_1234567890_ABC")
+    plan = _plan(category=OutboundPlanCategory.SUCCESS, message_key=OutboundMessageKey.STORE_BUY.value)
+    out = render_telegram_outbound_plan(plan, telegram_user_id=123456789)
+    assert "https://example.com/checkout" in out.message_text
+    assert "client_reference_id=" in out.message_text
+    assert "client_reference_proof=" in out.message_text
+
+
+def test_storefront_success_safe_pending_copy() -> None:
+    plan = _plan(category=OutboundPlanCategory.SUCCESS, message_key=OutboundMessageKey.STORE_SUCCESS.value)
+    out = render_telegram_outbound_plan(plan)
+    lowered = out.message_text.lower()
+    assert "payment step completed" in lowered
+    assert "/my_subscription" in out.message_text
+    assert "/get_access" in out.message_text
+    assert "paid" not in lowered
+
+
+def test_storefront_success_active_copy_safe() -> None:
+    plan = _plan(category=OutboundPlanCategory.SUCCESS, message_key=OutboundMessageKey.STORE_SUCCESS_ACTIVE.value)
+    out = render_telegram_outbound_plan(plan)
+    lowered = out.message_text.lower()
+    assert "subscription is active" in lowered
+    assert "/my_subscription" in out.message_text
+    assert "/get_access" in out.message_text
+    assert "payment payload" not in lowered
+    _assert_no_dsn_or_secretish(out.message_text)
+
+
+def test_storefront_renew_uses_renewal_then_checkout_fallback(monkeypatch) -> None:
+    plan = _plan(category=OutboundPlanCategory.SUCCESS, message_key=OutboundMessageKey.STORE_RENEW.value)
+    monkeypatch.setenv("TELEGRAM_STOREFRONT_CHECKOUT_URL", "https://example.com/checkout")
+    monkeypatch.setenv("TELEGRAM_CHECKOUT_REFERENCE_SECRET", "Checkout_Secret_1234567890_ABC")
+    monkeypatch.delenv("TELEGRAM_STOREFRONT_RENEWAL_URL", raising=False)
+    out_checkout = render_telegram_outbound_plan(plan, telegram_user_id=12345)
+    assert "https://example.com/checkout" in out_checkout.message_text
+    assert "client_reference_id=" in out_checkout.message_text
+    assert "client_reference_proof=" in out_checkout.message_text
+    monkeypatch.setenv("TELEGRAM_STOREFRONT_RENEWAL_URL", "https://example.com/renew")
+    out_renew = render_telegram_outbound_plan(plan, telegram_user_id=12345)
+    assert "https://example.com/renew" in out_renew.message_text
+    assert "client_reference_id=" in out_renew.message_text
+    assert "client_reference_proof=" in out_renew.message_text
+
+
+def test_support_menu_renders_faq_and_actions_keyboard() -> None:
+    plan = _plan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=OutboundMessageKey.SUPPORT_MENU.value,
+        keyboard_marker=OutboundKeyboardMarker.SUPPORT_MENU.value,
+    )
+    out = render_telegram_outbound_plan(plan)
+    assert "Support & Help" in out.message_text
+    assert "Use /support_contact to reach us." in out.message_text
+    assert out.reply_markup is not None
+    assert out.reply_markup["keyboard"] == [["/support_contact"], ["/menu"]]
+
+
+def test_support_contact_fallback_and_configured(monkeypatch) -> None:
+    plan = _plan(
+        category=OutboundPlanCategory.SUCCESS,
+        message_key=OutboundMessageKey.SUPPORT_CONTACT.value,
+        keyboard_marker=OutboundKeyboardMarker.SUPPORT_CONTACT.value,
+    )
+    monkeypatch.delenv("TELEGRAM_STOREFRONT_SUPPORT_URL", raising=False)
+    monkeypatch.delenv("TELEGRAM_STOREFRONT_SUPPORT_HANDLE", raising=False)
+    out_fallback = render_telegram_outbound_plan(plan)
+    assert "Support is currently unavailable. Please try again later." in out_fallback.message_text
+    assert out_fallback.reply_markup is not None
+    assert out_fallback.reply_markup["keyboard"] == [["/menu"]]
+
+    monkeypatch.setenv("TELEGRAM_STOREFRONT_SUPPORT_URL", "https://example.com/support")
+    monkeypatch.setenv("TELEGRAM_STOREFRONT_SUPPORT_HANDLE", "@vpn_support")
+    out_both = render_telegram_outbound_plan(plan)
+    assert "https://example.com/support" in out_both.message_text
+    assert "@vpn_support" in out_both.message_text
+
+    monkeypatch.delenv("TELEGRAM_STOREFRONT_SUPPORT_URL", raising=False)
+    out_handle_only = render_telegram_outbound_plan(plan)
+    assert "@vpn_support" in out_handle_only.message_text
+    assert "https://" not in out_handle_only.message_text
+
+    monkeypatch.delenv("TELEGRAM_STOREFRONT_SUPPORT_HANDLE", raising=False)
+    monkeypatch.setenv("TELEGRAM_STOREFRONT_SUPPORT_URL", "https://example.com/help")
+    out_url_only = render_telegram_outbound_plan(plan)
+    assert "https://example.com/help" in out_url_only.message_text

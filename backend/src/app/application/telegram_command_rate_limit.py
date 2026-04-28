@@ -11,6 +11,7 @@ from typing import Callable, Protocol
 class TelegramCommandRateLimitKey(str, Enum):
     STATUS = "status"
     ACCESS_RESEND = "access_resend"
+    SUPPORT = "support"
 
 
 class TelegramCommandRateLimiter(Protocol):
@@ -38,6 +39,8 @@ class InMemoryTelegramCommandRateLimiter:
         status_window_seconds: float = 60.0,
         access_resend_limit: int = 3,
         access_resend_window_seconds: float = 60.0,
+        support_limit: int = 30,
+        support_window_seconds: float = 60.0,
         now_seconds: Callable[[], float] = time.time,
     ) -> None:
         self._rules: dict[TelegramCommandRateLimitKey, _FixedWindowRule] = {
@@ -48,6 +51,10 @@ class InMemoryTelegramCommandRateLimiter:
             TelegramCommandRateLimitKey.ACCESS_RESEND: _FixedWindowRule(
                 max_requests=int(access_resend_limit),
                 window_seconds=float(access_resend_window_seconds),
+            ),
+            TelegramCommandRateLimitKey.SUPPORT: _FixedWindowRule(
+                max_requests=int(support_limit),
+                window_seconds=float(support_window_seconds),
             ),
         }
         self._state: dict[tuple[int, TelegramCommandRateLimitKey], tuple[float, int]] = {}

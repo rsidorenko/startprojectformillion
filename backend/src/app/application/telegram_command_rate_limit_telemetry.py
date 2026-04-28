@@ -11,10 +11,15 @@ from app.application.telegram_command_rate_limit import TelegramCommandRateLimit
 _LOGGER = logging.getLogger(__name__)
 
 TelegramRateLimitDecision = Literal["allowed", "limited"]
-TelegramRateLimitCommandBucket = Literal["status", "access_resend", "other"]
+TelegramRateLimitCommandBucket = Literal["status", "access_resend", "support", "other"]
 TelegramRateLimitPrincipalMarker = Literal["telegram_user_redacted"]
 TelegramRateLimitUpdateMarker = Literal["present", "absent"]
-TelegramRateLimitWindowBucket = Literal["status_window", "access_resend_window", "other_window"]
+TelegramRateLimitWindowBucket = Literal[
+    "status_window",
+    "access_resend_window",
+    "support_window",
+    "other_window",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +42,8 @@ def command_bucket_from_key(key: TelegramCommandRateLimitKey) -> TelegramRateLim
         return "status"
     if key is TelegramCommandRateLimitKey.ACCESS_RESEND:
         return "access_resend"
+    if key is TelegramCommandRateLimitKey.SUPPORT:
+        return "support"
     return "other"
 
 
@@ -45,6 +52,8 @@ def window_bucket_from_key(key: TelegramCommandRateLimitKey) -> TelegramRateLimi
         return "status_window"
     if key is TelegramCommandRateLimitKey.ACCESS_RESEND:
         return "access_resend_window"
+    if key is TelegramCommandRateLimitKey.SUPPORT:
+        return "support_window"
     return "other_window"
 
 
