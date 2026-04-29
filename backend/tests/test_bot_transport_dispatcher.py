@@ -387,7 +387,9 @@ def test_dispatch_help_then_start_only_bootstrap_audit() -> None:
     _run(main())
 
 
-def test_dispatch_resend_access_command_routes_to_resend_flow() -> None:
+def test_dispatch_resend_access_command_routes_to_resend_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TELEGRAM_ACCESS_RESEND_ENABLE", raising=False)
+
     async def main() -> None:
         c = build_slice1_composition()
         cid = new_correlation_id()
@@ -399,7 +401,9 @@ def test_dispatch_resend_access_command_routes_to_resend_flow() -> None:
     _run(main())
 
 
-def test_dispatch_get_access_alias_routes_to_resend_flow() -> None:
+def test_dispatch_get_access_alias_routes_to_resend_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TELEGRAM_ACCESS_RESEND_ENABLE", raising=False)
+
     async def main() -> None:
         c = build_slice1_composition()
         cid = new_correlation_id()
@@ -537,7 +541,9 @@ def test_dispatch_my_subscription_alias_shares_status_bucket() -> None:
     _run(main())
 
 
-def test_dispatch_get_access_and_resend_share_access_resend_bucket() -> None:
+def test_dispatch_get_access_and_resend_share_access_resend_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TELEGRAM_ACCESS_RESEND_ENABLE", raising=False)
+
     async def main() -> None:
         limiter = InMemoryTelegramCommandRateLimiter(
             status_limit=99,

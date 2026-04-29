@@ -8,6 +8,7 @@ import httpx
 
 from app.runtime.polling import PollingRuntimeConfig
 from app.runtime.polling_policy import DEFAULT_POLLING_POLICY, PollingPolicy
+from app.application.bootstrap import Slice1Composition
 from app.runtime.raw_startup import (
     Slice1InMemoryRawRuntimeBundle,
     build_slice1_in_memory_raw_runtime_bundle_with_default_bridge,
@@ -27,6 +28,7 @@ class Slice1HttpxRawRuntimeBundle:
 def build_slice1_httpx_raw_runtime_bundle(
     bot_token: str,
     *,
+    composition: Slice1Composition | None = None,
     config: PollingRuntimeConfig | None = None,
     base_url: str | None = None,
     client: httpx.AsyncClient | None = None,
@@ -41,5 +43,6 @@ def build_slice1_httpx_raw_runtime_bundle(
     inner = build_slice1_in_memory_raw_runtime_bundle_with_default_bridge(
         httpx_telegram,
         config=config,
+        composition=composition,
     )
     return Slice1HttpxRawRuntimeBundle(client=httpx_telegram, bundle=inner)

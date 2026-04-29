@@ -7,6 +7,7 @@ import json
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+import asyncpg
 import pytest
 from starlette.testclient import TestClient
 
@@ -78,6 +79,18 @@ def test_build_raises_when_production_webhook_enabled_without_secret(monkeypatch
     monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", raising=False)
     monkeypatch.setenv("BOT_TOKEN", "1234567890tok")
     with pytest.raises(ConfigurationError):
+        webhook_main_mod.build_slice1_telegram_webhook_asgi_application_from_env()
+
+
+def test_build_raises_when_production_webhook_enabled_without_durable_repos(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_HTTP_ENABLE", "1")
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", _synthetic_ascii_secret())
+    monkeypatch.setenv("BOT_TOKEN", "1234567890tok")
+    monkeypatch.delenv("SLICE1_USE_POSTGRES_REPOS", raising=False)
+    with pytest.raises(ConfigurationError, match="SLICE1_USE_POSTGRES_REPOS"):
         webhook_main_mod.build_slice1_telegram_webhook_asgi_application_from_env()
 
 
@@ -241,6 +254,31 @@ def test_enabled_app_dispatches_with_valid_secret(monkeypatch: pytest.MonkeyPatc
     assert len(called) == 1
 
 
+def test_enabled_webhook_rejects_malformed_update_id_before_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = _synthetic_ascii_secret()
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_HTTP_ENABLE", "1")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", secret)
+    monkeypatch.setenv("BOT_TOKEN", "1234567890tok")
+    app = webhook_main_mod.build_slice1_telegram_webhook_asgi_application_from_env()
+    mock_handle = AsyncMock()
+    with TestClient(app) as client:
+        with patch.object(polling_mod, "handle_slice1_telegram_update_to_runtime_action", mock_handle):
+            r = client.post(
+                "/telegram/webhook",
+                content=json.dumps({"update_id": "bad", "message": _synthetic_update_mapping()["message"]}).encode(
+                    "utf-8"
+                ),
+                headers={
+                    "content-type": "application/json",
+                    "x-telegram-bot-api-secret-token": secret,
+                },
+            )
+    assert r.status_code == 400
+    assert r.json() == {"ok": False, "error": "invalid_update_id"}
+    mock_handle.assert_not_called()
+
+
 def test_enabled_unauthorized_does_not_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     secret = _synthetic_ascii_secret()
     monkeypatch.setenv("TELEGRAM_WEBHOOK_HTTP_ENABLE", "1")
@@ -337,6 +375,31 @@ def test_response_has_no_secret_echo(monkeypatch: pytest.MonkeyPatch) -> None:
         ready = client.get("/readyz")
     blob = (unauthorized.text + health.text + ready.text).lower()
     assert secret.lower() not in blob
+
+
+def test_fulfillment_route_enabled_rejects_unsigned_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = _synthetic_ascii_secret()
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_HTTP_ENABLE", "1")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", secret)
+    monkeypatch.setenv("BOT_TOKEN", "1234567890tok")
+    monkeypatch.setenv("PAYMENT_FULFILLMENT_HTTP_ENABLE", "1")
+    monkeypatch.setenv("PAYMENT_FULFILLMENT_WEBHOOK_SECRET", "x" * 32)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/db?sslmode=disable")
+
+    class _FakePool:
+        async def close(self) -> None:
+            return None
+
+    async def _fake_create_pool(*args, **kwargs):
+        _ = (args, kwargs)
+        return _FakePool()
+
+    monkeypatch.setattr(asyncpg, "create_pool", _fake_create_pool)
+    app = webhook_main_mod.build_slice1_telegram_webhook_asgi_application_from_env()
+    with TestClient(app) as client:
+        r = client.post("/billing/fulfillment/webhook", content=b"{}")
+    assert r.status_code == 401
 
 
 def test_module_app_attribute_after_reload(monkeypatch: pytest.MonkeyPatch) -> None:

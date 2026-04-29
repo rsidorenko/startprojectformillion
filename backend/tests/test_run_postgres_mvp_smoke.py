@@ -54,7 +54,7 @@ def test_fail_fast_with_empty_database_url(monkeypatch: pytest.MonkeyPatch) -> N
         script.main()
 
 
-def test_runs_five_commands_in_order_and_sets_expected_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runs_seven_commands_in_order_and_sets_expected_env(monkeypatch: pytest.MonkeyPatch) -> None:
     script = _load_script_module()
     raw_db_url = "postgresql://user:secret@localhost:5432/mvpdb"
     monkeypatch.setenv("SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS", "1")
@@ -71,12 +71,15 @@ def test_runs_five_commands_in_order_and_sets_expected_env(monkeypatch: pytest.M
 
     script.main()
 
-    assert len(recorded_calls) == 5
+    assert len(recorded_calls) == 8
     assert recorded_calls[0][0][0] == ["python", "-m", "app.persistence"]
     assert recorded_calls[1][0][0] == ["python", "scripts/run_slice1_retention_dry_run.py"]
     assert recorded_calls[2][0][0] == ["python", "scripts/check_operator_billing_ingest_apply_e2e.py"]
     assert recorded_calls[3][0][0] == ["python", "scripts/check_postgres_mvp_access_fulfillment_e2e.py"]
-    assert recorded_calls[4][0][0] == [
+    assert recorded_calls[4][0][0] == ["python", "scripts/check_customer_journey_e2e.py"]
+    assert recorded_calls[5][0][0] == ["python", "scripts/reconcile_expired_access.py"]
+    assert recorded_calls[6][0][0] == ["python", "scripts/check_reconcile_health.py"]
+    assert recorded_calls[7][0][0] == [
         "pytest",
         "-q",
         "tests/test_postgres_slice1_process_env_async.py",
@@ -87,17 +90,26 @@ def test_runs_five_commands_in_order_and_sets_expected_env(monkeypatch: pytest.M
     assert recorded_calls[2][1]["check"] is True
     assert recorded_calls[3][1]["check"] is True
     assert recorded_calls[4][1]["check"] is True
+    assert recorded_calls[5][1]["check"] is True
+    assert recorded_calls[6][1]["check"] is True
+    assert recorded_calls[7][1]["check"] is True
 
     env_first = recorded_calls[0][1]["env"]
     env_second = recorded_calls[1][1]["env"]
     env_third = recorded_calls[2][1]["env"]
     env_fourth = recorded_calls[3][1]["env"]
     env_fifth = recorded_calls[4][1]["env"]
+    env_sixth = recorded_calls[5][1]["env"]
+    env_seventh = recorded_calls[6][1]["env"]
+    env_eighth = recorded_calls[7][1]["env"]
     assert env_first["SLICE1_USE_POSTGRES_REPOS"] == "1"
     assert env_second["SLICE1_USE_POSTGRES_REPOS"] == "1"
     assert "SLICE1_USE_POSTGRES_REPOS" not in env_third
     assert env_fourth["SLICE1_USE_POSTGRES_REPOS"] == "1"
     assert env_fifth["SLICE1_USE_POSTGRES_REPOS"] == "1"
+    assert env_sixth["SLICE1_USE_POSTGRES_REPOS"] == "1"
+    assert env_seventh["SLICE1_USE_POSTGRES_REPOS"] == "1"
+    assert env_eighth["SLICE1_USE_POSTGRES_REPOS"] == "1"
     assert env_first["BILLING_NORMALIZED_INGEST_ENABLE"] == "1"
     assert env_first["BILLING_SUBSCRIPTION_APPLY_ENABLE"] == "1"
     assert env_second["BILLING_NORMALIZED_INGEST_ENABLE"] == "1"
@@ -107,7 +119,13 @@ def test_runs_five_commands_in_order_and_sets_expected_env(monkeypatch: pytest.M
     assert env_fourth["BILLING_NORMALIZED_INGEST_ENABLE"] == "1"
     assert env_fourth["BILLING_SUBSCRIPTION_APPLY_ENABLE"] == "1"
     assert env_fifth["BILLING_NORMALIZED_INGEST_ENABLE"] == "1"
+    assert env_sixth["BILLING_NORMALIZED_INGEST_ENABLE"] == "1"
+    assert env_seventh["BILLING_NORMALIZED_INGEST_ENABLE"] == "1"
+    assert env_eighth["BILLING_NORMALIZED_INGEST_ENABLE"] == "1"
     assert env_fifth["BILLING_SUBSCRIPTION_APPLY_ENABLE"] == "1"
+    assert env_sixth["BILLING_SUBSCRIPTION_APPLY_ENABLE"] == "1"
+    assert env_seventh["BILLING_SUBSCRIPTION_APPLY_ENABLE"] == "1"
+    assert env_eighth["BILLING_SUBSCRIPTION_APPLY_ENABLE"] == "1"
     assert env_first["ISSUANCE_OPERATOR_ENABLE"] == "1"
     assert env_first["TELEGRAM_ACCESS_RESEND_ENABLE"] == "1"
     assert env_first["ADM02_ENSURE_ACCESS_ENABLE"] == "1"
@@ -123,19 +141,66 @@ def test_runs_five_commands_in_order_and_sets_expected_env(monkeypatch: pytest.M
     assert env_fifth["ISSUANCE_OPERATOR_ENABLE"] == "1"
     assert env_fifth["TELEGRAM_ACCESS_RESEND_ENABLE"] == "1"
     assert env_fifth["ADM02_ENSURE_ACCESS_ENABLE"] == "1"
+    assert env_sixth["ISSUANCE_OPERATOR_ENABLE"] == "1"
+    assert env_seventh["ISSUANCE_OPERATOR_ENABLE"] == "1"
+    assert env_eighth["ISSUANCE_OPERATOR_ENABLE"] == "1"
+    assert env_sixth["TELEGRAM_ACCESS_RESEND_ENABLE"] == "1"
+    assert env_seventh["TELEGRAM_ACCESS_RESEND_ENABLE"] == "1"
+    assert env_eighth["TELEGRAM_ACCESS_RESEND_ENABLE"] == "1"
+    assert env_sixth["ADM02_ENSURE_ACCESS_ENABLE"] == "1"
+    assert env_seventh["ADM02_ENSURE_ACCESS_ENABLE"] == "1"
+    assert env_eighth["ADM02_ENSURE_ACCESS_ENABLE"] == "1"
     assert env_first["BOT_TOKEN"] == "1234567890tok"
     assert env_second["BOT_TOKEN"] == "1234567890tok"
     assert env_third["BOT_TOKEN"] == "1234567890tok"
     assert env_fourth["BOT_TOKEN"] == "1234567890tok"
     assert env_fifth["BOT_TOKEN"] == "1234567890tok"
+    assert env_sixth["BOT_TOKEN"] == "1234567890tok"
+    assert env_seventh["BOT_TOKEN"] == "1234567890tok"
+    assert env_eighth["BOT_TOKEN"] == "1234567890tok"
     assert env_first["DATABASE_URL"] == raw_db_url
     assert env_third["DATABASE_URL"] == raw_db_url
+    assert env_sixth["DATABASE_URL"] == raw_db_url
+    assert env_seventh["DATABASE_URL"] == raw_db_url
+    assert env_eighth["DATABASE_URL"] == raw_db_url
+    assert env_first["ACCESS_RECONCILE_MAX_INTERVAL_SECONDS"] == "3600"
+    assert env_second["ACCESS_RECONCILE_MAX_INTERVAL_SECONDS"] == "3600"
+    assert env_third["ACCESS_RECONCILE_MAX_INTERVAL_SECONDS"] == "3600"
+    assert env_fourth["ACCESS_RECONCILE_MAX_INTERVAL_SECONDS"] == "3600"
+    assert env_fifth["ACCESS_RECONCILE_MAX_INTERVAL_SECONDS"] == "3600"
+    assert env_sixth["ACCESS_RECONCILE_MAX_INTERVAL_SECONDS"] == "3600"
+    assert env_seventh["ACCESS_RECONCILE_MAX_INTERVAL_SECONDS"] == "3600"
+    assert env_eighth["ACCESS_RECONCILE_MAX_INTERVAL_SECONDS"] == "3600"
+    assert env_first["SUBSCRIPTION_DEFAULT_PERIOD_DAYS"] == "30"
+    assert env_second["SUBSCRIPTION_DEFAULT_PERIOD_DAYS"] == "30"
+    assert env_third["SUBSCRIPTION_DEFAULT_PERIOD_DAYS"] == "30"
+    assert env_fourth["SUBSCRIPTION_DEFAULT_PERIOD_DAYS"] == "30"
+    assert env_fifth["SUBSCRIPTION_DEFAULT_PERIOD_DAYS"] == "30"
+    assert env_sixth["SUBSCRIPTION_DEFAULT_PERIOD_DAYS"] == "30"
+    assert env_seventh["SUBSCRIPTION_DEFAULT_PERIOD_DAYS"] == "30"
+    assert env_eighth["SUBSCRIPTION_DEFAULT_PERIOD_DAYS"] == "30"
+    reconcile_calls = [call for call in recorded_calls if call[0][0] == ["python", "scripts/reconcile_expired_access.py"]]
+    assert len(reconcile_calls) == 1
+    assert reconcile_calls[0][1]["check"] is True
 
 
 def test_build_child_env_adds_only_contract_opt_ins(monkeypatch: pytest.MonkeyPatch) -> None:
     script = _load_script_module()
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:secret@localhost:5432/mvpdb")
     monkeypatch.setenv("BOT_TOKEN", "already-set-token")
+    # CI may pre-set some of these env keys for other steps; clear them so the
+    # contract assertion is deterministic and verifies helper behavior.
+    for key in (
+        "ADM02_ENSURE_ACCESS_ENABLE",
+        "ACCESS_RECONCILE_MAX_INTERVAL_SECONDS",
+        "BILLING_NORMALIZED_INGEST_ENABLE",
+        "BILLING_SUBSCRIPTION_APPLY_ENABLE",
+        "ISSUANCE_OPERATOR_ENABLE",
+        "SLICE1_USE_POSTGRES_REPOS",
+        "SUBSCRIPTION_DEFAULT_PERIOD_DAYS",
+        "TELEGRAM_ACCESS_RESEND_ENABLE",
+    ):
+        monkeypatch.delenv(key, raising=False)
 
     base_env = dict(script.os.environ)
     child_env = script._build_child_env()
@@ -143,10 +208,12 @@ def test_build_child_env_adds_only_contract_opt_ins(monkeypatch: pytest.MonkeyPa
 
     assert changed_keys == {
         "ADM02_ENSURE_ACCESS_ENABLE",
+        "ACCESS_RECONCILE_MAX_INTERVAL_SECONDS",
         "BILLING_NORMALIZED_INGEST_ENABLE",
         "BILLING_SUBSCRIPTION_APPLY_ENABLE",
         "ISSUANCE_OPERATOR_ENABLE",
         "SLICE1_USE_POSTGRES_REPOS",
+        "SUBSCRIPTION_DEFAULT_PERIOD_DAYS",
         "TELEGRAM_ACCESS_RESEND_ENABLE",
     }
     assert child_env["BILLING_NORMALIZED_INGEST_ENABLE"] == "1"
@@ -154,7 +221,9 @@ def test_build_child_env_adds_only_contract_opt_ins(monkeypatch: pytest.MonkeyPa
     assert child_env["ISSUANCE_OPERATOR_ENABLE"] == "1"
     assert child_env["TELEGRAM_ACCESS_RESEND_ENABLE"] == "1"
     assert child_env["ADM02_ENSURE_ACCESS_ENABLE"] == "1"
+    assert child_env["ACCESS_RECONCILE_MAX_INTERVAL_SECONDS"] == "3600"
     assert child_env["SLICE1_USE_POSTGRES_REPOS"] == "1"
+    assert child_env["SUBSCRIPTION_DEFAULT_PERIOD_DAYS"] == "30"
 
 
 def test_preserves_existing_bot_token(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -173,12 +242,15 @@ def test_preserves_existing_bot_token(monkeypatch: pytest.MonkeyPatch) -> None:
 
     script.main()
 
-    assert len(recorded_envs) == 5
+    assert len(recorded_envs) == 8
     assert recorded_envs[0]["BOT_TOKEN"] == "already-set-token"
     assert recorded_envs[1]["BOT_TOKEN"] == "already-set-token"
     assert recorded_envs[2]["BOT_TOKEN"] == "already-set-token"
     assert recorded_envs[3]["BOT_TOKEN"] == "already-set-token"
     assert recorded_envs[4]["BOT_TOKEN"] == "already-set-token"
+    assert recorded_envs[5]["BOT_TOKEN"] == "already-set-token"
+    assert recorded_envs[6]["BOT_TOKEN"] == "already-set-token"
+    assert recorded_envs[7]["BOT_TOKEN"] == "already-set-token"
 
 
 def test_raw_database_url_not_exposed_in_helper_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -274,12 +346,15 @@ def test_truthy_opt_in_values_allow_run(monkeypatch: pytest.MonkeyPatch, truthy_
 
     script.main()
 
-    assert len(recorded_calls) == 5
+    assert len(recorded_calls) == 8
     assert recorded_calls[0][0][0] == ["python", "-m", "app.persistence"]
     assert recorded_calls[1][0][0] == ["python", "scripts/run_slice1_retention_dry_run.py"]
     assert recorded_calls[2][0][0] == ["python", "scripts/check_operator_billing_ingest_apply_e2e.py"]
     assert recorded_calls[3][0][0] == ["python", "scripts/check_postgres_mvp_access_fulfillment_e2e.py"]
-    assert recorded_calls[4][0][0] == [
+    assert recorded_calls[4][0][0] == ["python", "scripts/check_customer_journey_e2e.py"]
+    assert recorded_calls[5][0][0] == ["python", "scripts/reconcile_expired_access.py"]
+    assert recorded_calls[6][0][0] == ["python", "scripts/check_reconcile_health.py"]
+    assert recorded_calls[7][0][0] == [
         "pytest",
         "-q",
         "tests/test_postgres_slice1_process_env_async.py",

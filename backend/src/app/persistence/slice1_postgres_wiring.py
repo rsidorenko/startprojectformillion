@@ -75,6 +75,7 @@ async def resolve_slice1_composition_for_runtime(
             operational_state=issuance_state_repo,
         ),
         issuance_state_lookup=_PostgresIssuanceStateLookup(issuance_state_repo),
+        issuance_state_mutation=issuance_state_repo,
         identity=PostgresUserIdentityRepository(pool),
         idempotency=PostgresIdempotencyRepository(pool),
         snapshots=PostgresSubscriptionSnapshotReader(pool),

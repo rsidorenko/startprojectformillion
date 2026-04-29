@@ -8,12 +8,23 @@ from typing import Literal, Protocol
 
 _LOGGER = logging.getLogger(__name__)
 
-TelegramWebhookIngressDecision = Literal["accepted", "unauthorized", "invalid_json", "disabled", "not_ready"]
+TelegramWebhookIngressDecision = Literal[
+    "accepted",
+    "duplicate_ignored",
+    "unauthorized",
+    "invalid_json",
+    "invalid_update",
+    "disabled",
+    "not_ready",
+]
 TelegramWebhookIngressReasonBucket = Literal[
     "valid_secret",
+    "duplicate_update",
     "missing_secret_header",
     "invalid_secret_header",
     "invalid_json",
+    "missing_update_id",
+    "invalid_update_id",
     "webhook_disabled",
     "readiness_failed",
 ]

@@ -13,6 +13,8 @@ separate webhook process only when you intentionally enable `TELEGRAM_WEBHOOK_HT
 - Run from `backend` directory.
 - `DATABASE_URL` must be set.
 - Set `SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS` to explicit opt-in value: `1`, `true`, or `yes`.
+- Ensure migrations are current through `backend/migrations/014_subscription_lifecycle_v1.sql`
+  before trusting lifecycle smoke evidence.
 - Use only isolated/dev database (never production or shared DB).
 
 ## Run
@@ -21,6 +23,7 @@ Minimal safe sequence (example values only, do not use real secrets in docs/hist
 ```bash
 export DATABASE_URL="postgresql://dev_user:dev_password@localhost:5432/dev_db"
 export SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS=1
+export SUBSCRIPTION_DEFAULT_PERIOD_DAYS=30
 python scripts/run_postgres_mvp_smoke.py
 ```
 
@@ -48,7 +51,9 @@ What this gate verifies (through canonical helper):
   2. targeted postgres tests;
   3. retention dry-run;
   4. operator billing ingest/apply e2e;
-  5. access fulfillment e2e.
+  5. access fulfillment e2e;
+  6. customer journey e2e;
+  7. expired access reconcile.
 - Cleans up container and disposable volume by default.
 - Returns exit code `0` on success.
 
@@ -76,6 +81,30 @@ CI blocking smoke path runs canonical helper directly against isolated GitHub Ac
 This path does not require local Docker smoke wrapper execution in CI.
 Workflow `backend-postgres-mvp-smoke-validation` now runs automatically on push to `main` when relevant backend/CI paths change.
 Manual `workflow_dispatch` is still available as a fallback trigger.
+
+CI/operator validation contract for customer journey evidence:
+- workflow: `backend-postgres-mvp-smoke-validation`;
+- blocking job: `slice1-postgres-mvp-smoke`;
+- blocking step: `Run canonical PostgreSQL MVP smoke helper (blocking gate)`;
+- canonical command (from `backend`): `python scripts/run_postgres_mvp_smoke.py`.
+
+Safe test-only CI env markers required for customer journey smoke:
+- `TELEGRAM_STOREFRONT_PLAN_NAME=CI Test Plan`
+- `TELEGRAM_STOREFRONT_PLAN_PRICE=$9.99 test-only`
+- `TELEGRAM_STOREFRONT_CHECKOUT_URL=https://checkout.test.local/ci`
+- `TELEGRAM_STOREFRONT_RENEWAL_URL=https://checkout.test.local/ci/renew`
+- `TELEGRAM_STOREFRONT_SUPPORT_URL=https://support.test.local/ci`
+- `TELEGRAM_ACCESS_RESEND_ENABLE=1`
+- `PAYMENT_FULFILLMENT_HTTP_ENABLE=1`
+- `PAYMENT_FULFILLMENT_WEBHOOK_SECRET=test_only_ci_webhook_secret`
+- `TELEGRAM_CHECKOUT_REFERENCE_SECRET=test_only_ci_checkout_reference_secret`
+- `TELEGRAM_CHECKOUT_REFERENCE_MAX_AGE_SECONDS=604800`
+- `ACCESS_RECONCILE_SCHEDULE_ACK=1`
+- `ACCESS_RECONCILE_MAX_INTERVAL_SECONDS=3600`
+
+Evidence expectation:
+- customer journey executes inside canonical helper and is blocking (not advisory);
+- CI evidence remains safe markers only (no raw secret/token/DSN/payload/checkout credential leakage in contracts).
 
 ## MVP release preflight (targeted, no Docker)
 Use a single lightweight targeted preflight command for production-like release readiness contracts without Docker and
@@ -212,7 +241,7 @@ Use this only when local isolated path is unavailable and only against explicitl
 - Do not use production-like DSNs for local smoke.
 - This gate does not introduce public billing ingress, provider SDK integration, or real credential/config delivery.
 
-## What the helper does (5 steps)
+## What the helper does (6 steps)
 1. Runs persistence entrypoint: `python -m app.persistence`.
 2. Runs retention helper in dry-run-only path:
    `python scripts/run_slice1_retention_dry_run.py`.
@@ -234,7 +263,24 @@ Use this only when local isolated path is unavailable and only against explicitl
    -> Telegram `/status` (active + access ready)
    -> ADM-01 support readiness (active + access ready)
    -> Telegram `/get_access` safe accepted response, followed by cleanup.
-5. Runs both opt-in integration test files in one pytest invocation:
+5. Runs customer-facing journey e2e smoke with signed provider-agnostic fulfillment ingress:
+   `python scripts/check_customer_journey_e2e.py`.
+   This validates, in one flow:
+   - `/start` welcome + main keyboard;
+   - `/plans`, `/buy`/`/checkout`, `/support` safe storefront copy;
+   - `/success` pending before fulfillment;
+   - invalid fulfillment signature rejected with no activation;
+- stale/future checkout reference rejected with no activation;
+   - valid signed fulfillment activates subscription via existing billing ingress/apply path;
+   - duplicate fulfillment idempotent-safe;
+   - `/success` active copy only after billing-backed active snapshot;
+   - `/my_subscription` active state;
+   - `/get_access` and `/resend_access` safe post-activation behavior.
+6. Runs expired access reconcile boundary:
+   `python scripts/reconcile_expired_access.py`.
+   This idempotent step revokes already-issued durable access state for snapshots that are
+   `active` but past `active_until_utc`.
+7. Runs both opt-in integration test files in one pytest invocation:
    `pytest -q tests/test_postgres_slice1_process_env_async.py tests/test_postgres_migration_ledger_integration.py`.
 
 ## Expected side effects
@@ -266,7 +312,7 @@ Use this only when local isolated path is unavailable and only against explicitl
 
 ## Success criteria
 - Command exits with code `0`.
-- All five subprocess steps complete without error.
+- All seven subprocess steps complete without error.
 
 ## Fail-fast troubleshooting
 - Docker unavailable: start Docker Desktop/Engine and confirm `docker --version` and compose command are available.
@@ -279,6 +325,7 @@ Use this only when local isolated path is unavailable and only against explicitl
 - Retention dry-run step failure: inspect `scripts/run_slice1_retention_dry_run.py` subprocess output and fix env/config issue first.
 - Operator billing e2e step failure: inspect `scripts/check_operator_billing_ingest_apply_e2e.py` output and fix internal billing ingest/apply wiring first.
 - Access fulfillment e2e step failure: inspect `scripts/check_postgres_mvp_access_fulfillment_e2e.py` output and fix internal issuance/access resend wiring first.
+- Customer journey e2e step failure: inspect `scripts/check_customer_journey_e2e.py` output and fix storefront/fulfillment/access journey wiring first.
 - Access fulfillment e2e command sequence uses distinct synthetic Telegram `update_id` values; do not reuse
   the same update id for different smoke steps when reproducing manually.
 
@@ -294,3 +341,73 @@ Use this only when local isolated path is unavailable and only against explicitl
 - Retention helper in this flow is dry-run only and must not be treated as destructive cleanup.
 - This runbook does not imply production DB smoke is safe.
 - No public billing ingress is introduced in this smoke flow.
+
+## Customer journey e2e direct run
+Minimal env for standalone journey smoke (isolated/dev DB only):
+
+```bash
+export DATABASE_URL="postgresql://dev_user:dev_password@localhost:5432/dev_db"
+export SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS=1
+export TELEGRAM_ACCESS_RESEND_ENABLE=1
+export PAYMENT_FULFILLMENT_WEBHOOK_SECRET="test_only_secret_value"
+export TELEGRAM_CHECKOUT_REFERENCE_SECRET="test_only_checkout_reference_secret"
+export TELEGRAM_CHECKOUT_REFERENCE_MAX_AGE_SECONDS=604800
+export SUBSCRIPTION_DEFAULT_PERIOD_DAYS=30
+python scripts/check_customer_journey_e2e.py
+```
+
+Expected safe outcome:
+- stdout: `customer_journey_e2e: ok`
+- no raw secret/signature/payment payload/access credential values in public output.
+- provider callback metadata must preserve `client_reference_id` and `client_reference_proof`.
+- `/my_subscription` shows active-until for fresh fulfillment and expired + `/renew` CTA for forced expired path.
+- `/renew` returns a signed renewal/checkout URL with `client_reference_id` and `client_reference_proof`.
+
+Operator validation command (exact, from `backend`):
+
+```bash
+DATABASE_URL="<isolated_test_db_url>" SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS=1 python scripts/run_postgres_mvp_smoke.py
+```
+
+Expected safe markers during validation:
+- canonical smoke exits with code `0`;
+- migration ledger includes `014_subscription_lifecycle_v1.sql`;
+- customer journey command is part of canonical helper sequence:
+  `python scripts/check_customer_journey_e2e.py`;
+- lifecycle path validates `active_until_utc` (active + forced-expired renewal CTA);
+- reconcile command is part of canonical helper sequence:
+  `python scripts/reconcile_expired_access.py`;
+- reconcile step remains blocking in canonical helper sequence (not advisory);
+- reconcile health command runs immediately after reconcile as blocking step:
+  `python scripts/check_reconcile_health.py`;
+- reconcile step emits safe markers only (`expired_access_reconcile: ok`, `reconciled_rows=<n>`);
+- reconcile health emits safe markers only (`reconcile_health_check: ok`, `last_run_status=completed`);
+- `customer_journey_e2e: ok` appears for journey step success;
+- CI artifact summary/logs keep bounded safe markers only.
+
+Production reconcile scheduling requirement:
+- run `python scripts/reconcile_expired_access.py` on a regular production schedule;
+- validate freshness via read-only command: `python scripts/check_reconcile_health.py`;
+- strict launch preflight requires `ACCESS_RECONCILE_SCHEDULE_ACK=1`;
+- strict launch preflight requires `ACCESS_RECONCILE_MAX_INTERVAL_SECONDS` within `300..86400`;
+- default/local preflight can warn-only when scheduling markers are absent;
+- if periodic reconcile is missing, expired subscriptions can remain access-ready until manual operator run.
+
+How to interpret customer journey failures:
+- invalid signature failure: if journey does not reject invalid signature path, treat as blocking ingress signature-validation regression;
+- pending failure: if `/success` is not pending before valid fulfillment, treat as blocking billing-backed state transition regression;
+- duplicate fulfillment failure: if duplicate signed fulfillment is not idempotent-safe, treat as blocking duplicate-protection regression.
+- checkout reference expiry/future failure:
+  - if stale/future reference is accepted, treat as blocking launch-security regression;
+  - if fresh reference is rejected, treat as blocking checkout-reference TTL/config regression.
+
+Targeted verification command (from `backend`):
+
+```bash
+python -m pytest -q tests/test_payment_fulfillment_ingress.py tests/test_run_customer_journey_e2e.py tests/test_launch_readiness_preflight.py tests/test_bot_transport_storefront_config.py
+```
+
+Known limitations:
+- uses synthetic user/events only;
+- requires isolated Postgres and existing migrations;
+- no real provider SDK, no real checkout provider callbacks, no production secrets.

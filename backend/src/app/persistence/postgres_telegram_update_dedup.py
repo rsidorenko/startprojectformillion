@@ -58,10 +58,12 @@ class PostgresTelegramUpdateDedupGuard:
     async def mark_if_first_seen(
         self,
         *,
+        namespace: str = "telegram_default",
         command_bucket: TelegramUpdateDedupCommandBucket,
         telegram_update_id: int,
     ) -> bool:
         key_hash = dedup_key_hash_for_update(
+            namespace=namespace,
             command_bucket=command_bucket,
             telegram_update_id=telegram_update_id,
         )

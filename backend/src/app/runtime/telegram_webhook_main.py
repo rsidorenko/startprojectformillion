@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import os
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 import asyncpg
 from starlette.applications import Starlette
@@ -15,12 +16,20 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from app.observability.logging_policy import sanitize_structured_fields
-from app.persistence.slice1_postgres_wiring import slice1_postgres_repos_requested
+from app.persistence.slice1_postgres_wiring import (
+    resolve_slice1_composition_for_runtime,
+    slice1_postgres_repos_requested,
+)
 from app.runtime.telegram_httpx_raw_startup import build_slice1_httpx_raw_runtime_bundle
 from app.runtime.telegram_webhook_ingress import (
     create_slice1_telegram_webhook_starlette_app,
     load_telegram_webhook_ingress_settings_from_env,
 )
+from app.runtime.payment_fulfillment_ingress import (
+    create_payment_fulfillment_ingress_app,
+    load_fulfillment_ingress_settings_from_env,
+)
+from app.runtime.telegram_httpx_raw_client import HttpxTelegramRawPollingClient
 from app.runtime.telegram_webhook_ingress_telemetry import (
     StructuredLoggingTelegramWebhookIngressTelemetry,
     TelegramWebhookIngressDecisionEvent,
@@ -30,6 +39,46 @@ from app.security.config import ConfigurationError, load_runtime_config
 
 _LOGGER = logging.getLogger(__name__)
 ReadinessCheck = Callable[[], Awaitable[bool]]
+
+
+class _FulfillmentActivationTelegramNotifier:
+    """Delegates proactive activation copy to the shared raw Bot API client."""
+
+    __slots__ = ("_client",)
+
+    def __init__(self, client: HttpxTelegramRawPollingClient) -> None:
+        self._client = client
+
+    async def send_subscription_activated_notice(
+        self,
+        *,
+        telegram_user_id: int,
+        text: str,
+        reply_markup: dict[str, Any] | None,
+        correlation_id: str,
+    ) -> None:
+        await self._client.send_text_message(
+            chat_id=telegram_user_id,
+            text=text,
+            correlation_id=correlation_id,
+            reply_markup=reply_markup,
+        )
+
+
+def _truthy_env(raw: str | None) -> bool:
+    if raw is None:
+        return False
+    return raw.strip().lower() in ("1", "true", "yes")
+
+
+def _is_local_app_env(app_env: str) -> bool:
+    return app_env.strip().lower() in {"development", "dev", "local", "test"}
+
+
+def _durable_dedup_required(*, app_env: str) -> bool:
+    if _truthy_env(os.environ.get("LAUNCH_PREFLIGHT_STRICT")):
+        return True
+    return not _is_local_app_env(app_env)
 
 
 def _log_webhook_main_event(*, outcome: str, detail: str) -> None:
@@ -209,20 +258,53 @@ def build_slice1_telegram_webhook_asgi_application_from_env(
         return _build_webhook_http_disabled_starlette_app()
 
     config = load_runtime_config()
-    raw_bundle = build_slice1_httpx_raw_runtime_bundle(config.bot_token)
+    if _durable_dedup_required(app_env=app_env) and not slice1_postgres_repos_requested():
+        raise ConfigurationError("missing configuration for durable webhook dedup: SLICE1_USE_POSTGRES_REPOS=1")
+    composition, runtime_pool = None, None
+    if slice1_postgres_repos_requested():
+        composition, runtime_pool = asyncio.run(resolve_slice1_composition_for_runtime(config))
+    raw_bundle = build_slice1_httpx_raw_runtime_bundle(
+        config.bot_token,
+        composition=composition,
+    )
     runtime = raw_bundle.bundle.runtime
     telemetry = StructuredLoggingTelegramWebhookIngressTelemetry()
     inner = create_slice1_telegram_webhook_starlette_app(runtime, settings=settings, telemetry=telemetry)
+    fulfillment_settings = load_fulfillment_ingress_settings_from_env()
+    fulfillment_app: Starlette | None = None
+    fulfillment_pool: asyncpg.Pool | None = None
+    if fulfillment_settings is not None:
+        dsn = (config.database_url or "").strip()
+        if not dsn:
+            raise ConfigurationError("missing or empty configuration: DATABASE_URL")
     checker = dependency_readiness_check or _make_dependency_readiness_checker(
         runtime_initialized=True,
         database_url=config.database_url,
     )
     readyz_handler = _build_readyz_handler(checker, telemetry=telemetry)
 
+    async def _fulfillment_proxy(request: Request) -> JSONResponse:
+        if fulfillment_app is None:
+            return JSONResponse({"ok": False, "error": "temporarily_unavailable"}, status_code=503)
+        return await fulfillment_app.router.routes[0].endpoint(request)  # type: ignore[return-value]
+
     @asynccontextmanager
     async def _lifespan(_: Starlette) -> AsyncIterator[None]:
+        nonlocal fulfillment_pool, fulfillment_app
+        if fulfillment_settings is not None:
+            dsn = (config.database_url or "").strip()
+            fulfillment_pool = await asyncpg.create_pool(dsn, min_size=1, max_size=4)
+            fulfillment_app = create_payment_fulfillment_ingress_app(
+                pool=fulfillment_pool,
+                settings=fulfillment_settings,
+                activation_telegram_notifier=_FulfillmentActivationTelegramNotifier(raw_bundle.client),
+            )
         _log_webhook_main_event(outcome="ready", detail="http_enabled")
         yield
+        if fulfillment_pool is not None:
+            await fulfillment_pool.close()
+        if runtime_pool is not None:
+            await runtime_pool.close()
         await raw_bundle.aclose()
         _log_webhook_main_event(outcome="shutdown", detail="client_closed")
 
@@ -231,6 +313,8 @@ def build_slice1_telegram_webhook_asgi_application_from_env(
         Route("/readyz", readyz_handler, methods=["GET"]),
         *list(inner.routes),
     ]
+    if fulfillment_settings is not None:
+        routes.append(Route(fulfillment_settings.http_path, _fulfillment_proxy, methods=["POST"]))
     return Starlette(routes=routes, lifespan=_lifespan)
 
 

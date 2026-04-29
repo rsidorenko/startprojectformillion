@@ -57,6 +57,7 @@ def test_runtime_wrapper_private_start_send_message() -> None:
         assert action.chat_id == 42
         assert action.message_text == IDENTITY_READY_TEXT
         assert action.action_keys == ()
+        assert action.reply_markup is not None
         assert action.correlation_id == cid
 
     _run(main())
@@ -135,6 +136,7 @@ def test_runtime_wrapper_private_help_send_message_no_uc01_ledger() -> None:
         assert action.kind is TelegramRuntimeActionKind.SEND_MESSAGE
         assert action.message_text == SLICE1_HELP_TEXT
         assert action.action_keys == ()
+        assert action.reply_markup is not None
         assert action.uc01_idempotency_key is None
         assert action.chat_id == 33
         assert len(await c.audit.recorded_events()) == 0
@@ -165,6 +167,7 @@ def test_runtime_wrapper_non_private_start_noop() -> None:
         assert action.chat_id is None
         assert action.message_text is None
         assert action.action_keys == ()
+        assert action.reply_markup is None
         assert is_valid_correlation_id(action.correlation_id)
 
     _run(main())
@@ -183,6 +186,7 @@ def test_runtime_wrapper_malformed_no_message_noop() -> None:
         assert action.chat_id is None
         assert action.message_text is None
         assert action.action_keys == ()
+        assert action.reply_markup is None
         assert is_valid_correlation_id(action.correlation_id)
 
     _run(main())
@@ -211,9 +215,9 @@ def test_runtime_action_shape_no_raw_payload_or_internal_enums() -> None:
         action = await handle_slice1_telegram_update_to_runtime_action(raw, c, correlation_id=cid)
         assert isinstance(action, TelegramRuntimeAction)
         assert isinstance(action.kind, TelegramRuntimeActionKind)
-        for name in ("chat_id", "message_text", "correlation_id", "action_keys", "kind", "uc01_idempotency_key"):
+        for name in ("chat_id", "message_text", "correlation_id", "action_keys", "reply_markup", "kind", "uc01_idempotency_key"):
             assert hasattr(action, name)
-        assert not any(isinstance(getattr(action, n), dict) for n in action.__slots__)
+        assert isinstance(action.reply_markup, dict) or action.reply_markup is None
         assert TransportResponseCategory not in type(action).__mro__
 
     _run(main())
