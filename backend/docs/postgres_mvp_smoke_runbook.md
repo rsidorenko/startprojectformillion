@@ -13,8 +13,8 @@ separate webhook process only when you intentionally enable `TELEGRAM_WEBHOOK_HT
 - Run from `backend` directory.
 - `DATABASE_URL` must be set.
 - Set `SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS` to explicit opt-in value: `1`, `true`, or `yes`.
-- Ensure migrations are current through `backend/migrations/014_subscription_lifecycle_v1.sql`
-  before trusting lifecycle smoke evidence.
+- Ensure migrations are current through `backend/migrations/015_access_reconcile_runs.sql`
+  before trusting lifecycle and reconcile smoke evidence.
 - Use only isolated/dev database (never production or shared DB).
 
 ## Run
@@ -172,21 +172,30 @@ Operational note:
 A **second blocking job** in the same workflow, `slice1-postgres-retention-integration`, runs opt-in slice-1 retention **integration** tests against an **isolated** GitHub Actions `services.postgres` instance. The job sets a **service-local** `DATABASE_URL` in the test step (disposable in-workflow credentials, not a repository secret). This closes the local gap where those tests are **skipped** when `DATABASE_URL` is unset. The same CI Postgres service model is used by the canonical MVP smoke helper gate in job `slice1-postgres-mvp-smoke`.
 
 ## Current delivery checkpoint
-- Scope: slice-1 PostgreSQL smoke/CI hardening checkpoint (documentation/release-marker only).
+- Scope: MVP release candidate validation checkpoint (documentation/release-marker only).
 - Current trigger semantics: `push`, `pull_request`, and `workflow_dispatch`.
-- Current blocking CI gate remains intentionally narrow:
-  - targeted smoke helper regression;
-  - canonical PostgreSQL MVP smoke helper (`python scripts/run_postgres_mvp_smoke.py`) against isolated CI Postgres service;
-  - slice-1 retention **integration** tests (real `services.postgres` + `DATABASE_URL` in the retention job only; JUnit: `test-reports/backend-postgres-retention-integration.xml`; artifact: `backend-postgres-retention-integration-reports`).
+- Current blocking CI gate in `slice1-postgres-mvp-smoke` job:
+  - admin support internal read gate (advisory, non-blocking);
+  - ADM-01 internal HTTP entrypoint smoke (blocking);
+  - issuance operator entrypoint smoke (blocking);
+  - full backend regression (advisory, non-blocking);
+  - targeted smoke helper regression (blocking);
+  - release candidate validator (blocking final gate): `python scripts/validate_release_candidate.py`;
+  - evidence summary and artifact upload.
+- Release candidate validator blocking check order:
+  1. `python scripts/run_mvp_release_preflight.py`
+  2. `python scripts/check_launch_readiness.py --strict`
+  3. `python scripts/configure_telegram_webhook.py --dry-run`
+  4. `python scripts/run_postgres_mvp_smoke.py`
+  5. `python scripts/check_reconcile_health.py`
+- Second blocking job: `slice1-postgres-retention-integration` runs opt-in retention integration tests against isolated CI Postgres.
+- Last known green evidence:
+  - commit `9dcd6b6` on `main`;
+  - workflow run `25110893372`;
+  - conclusion `success` (both jobs succeeded).
 - Full backend regression remains advisory evidence (non-blocking) for this phase.
 - Admin/support internal read gate script runs as advisory evidence (non-blocking); see `backend/docs/admin_support_internal_read_gate_runbook.md`.
 - Reports artifact path/name: repo-root `backend/test-reports` uploaded as `backend-postgres-mvp-smoke-validation-reports` (MVP smoke job). Retention integration JUnit and related files: same directory layout under `backend/test-reports` in job `slice1-postgres-retention-integration`, uploaded separately as `backend-postgres-retention-integration-reports`.
-- Last known green evidence:
-  - commit `1a2f797`;
-  - auto-triggered run `#9`;
-  - conclusion `success`;
-  - artifact upload confirmed.
-  - Advisory admin/support internal read gate: green at `main@2c65a9c` (workflow run `24908572883`; artifact `backend-postgres-mvp-smoke-validation-reports`; marker file `backend-admin-support-internal-read-gate-summary.txt` with `internal_read_gate_outcome=success`).
 - Non-blocking tooling follow-up:
   - residual Node20 warning may still appear for `actions/upload-artifact@v5` even with Node 24 opt-in;
   - treat as upstream/tooling messaging follow-up, not a backend runtime gate regression.
@@ -195,9 +204,12 @@ Expected CI commands (from `backend`):
 
 ```bash
 python -m pip install -e .[test]
+python scripts/check_admin_support_internal_read_gate.py
+python scripts/check_adm01_internal_http_entrypoint_smoke.py
+python scripts/check_issuance_operator_entrypoint_smoke.py
 python -m pytest -q --junitxml=test-reports/backend-full-regression.xml
 python -m pytest -q tests/test_run_postgres_mvp_smoke_local.py tests/test_run_postgres_mvp_smoke.py tests/test_run_slice1_retention_dry_run.py --junitxml=test-reports/backend-smoke-helper-regression.xml
-DATABASE_URL=<service-local-ci-postgres-url> SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS=1 python scripts/run_postgres_mvp_smoke.py
+DATABASE_URL=<service-local-ci-postgres-url> SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS=1 python scripts/validate_release_candidate.py
 ```
 
 Notes:
