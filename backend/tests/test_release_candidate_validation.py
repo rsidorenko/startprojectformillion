@@ -99,6 +99,7 @@ def test_preflight_failure_stops_and_fails_safely(
     assert rc == 1
     assert calls == [["python", "scripts/run_mvp_release_preflight.py"]]
     assert "check=migration_readiness_contract status=fail" in out.out
+    assert "check=migration_readiness_contract child_exit_code=1" in out.out
     assert "release_candidate_validation: failed" in out.out
     assert "traceback" not in (out.out + out.err).lower()
     assert "postgres://" not in (out.out + out.err).lower()
@@ -131,6 +132,7 @@ def test_smoke_failure_stops_and_fails_safely(
     ]
     blob = (out.out + out.err).lower()
     assert "check=canonical_postgres_mvp_smoke status=fail" in blob
+    assert "check=canonical_postgres_mvp_smoke child_exit_code=2" in blob
     assert "release_candidate_validation: failed" in blob
     assert "token=" not in blob
     assert "stack trace" not in blob
@@ -155,6 +157,7 @@ def test_reconcile_health_failure_fails_safely(
     assert rc == 1
     blob = (out.out + out.err).lower()
     assert "check=reconcile_health_check status=fail" in blob
+    assert "check=reconcile_health_check child_exit_code=3" in blob
     assert "release_candidate_validation: failed" in blob
     assert "database_url=" not in blob
 

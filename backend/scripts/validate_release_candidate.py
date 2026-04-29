@@ -6,8 +6,29 @@ import subprocess
 from collections.abc import Mapping, Sequence
 import os
 from pathlib import Path
+import re
 
 _MUTATING_TESTS_GUARD_ENV = "SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS"
+_FORBIDDEN_OUTPUT_FRAGMENTS = (
+    "database_url",
+    "postgres://",
+    "postgresql://",
+    "bearer ",
+    "traceback",
+    "stack trace",
+    "private key",
+    "begin ",
+    "token=",
+    "vpn://",
+    "provider_issuance_ref",
+    "issue_idempotency_key",
+    "internal_user_id",
+    "customer_ref",
+    "provider_ref",
+    "checkout_attempt_id",
+    "telegram_webhook_secret_token=",
+)
+_DSN_RE = re.compile(r"(postgres(?:ql)?://)([^\\s]+)", re.IGNORECASE)
 
 
 def _backend_dir() -> Path:
@@ -66,6 +87,28 @@ def _build_child_env(env: Mapping[str, str]) -> dict[str, str]:
     return child_env
 
 
+def _contains_forbidden_fragment(text: str) -> bool:
+    lowered = text.lower()
+    return any(fragment in lowered for fragment in _FORBIDDEN_OUTPUT_FRAGMENTS)
+
+
+def _redact_line(line: str) -> str:
+    redacted = _DSN_RE.sub(r"\\1<redacted>", line)
+    if _contains_forbidden_fragment(redacted):
+        return "<redacted_line>"
+    return redacted
+
+
+def _safe_tail(stdout: str, stderr: str, *, max_lines: int = 60) -> tuple[str, ...]:
+    combined = []
+    for raw in (stdout or "").splitlines() + (stderr or "").splitlines():
+        combined.append(_redact_line(raw))
+    tail = combined[-max_lines:]
+    # Drop empty tails to avoid noisy output.
+    pruned = tuple(line for line in tail if line and line != "<redacted_line>")
+    return pruned
+
+
 def _run_check(
     *,
     check_name: str,
@@ -85,6 +128,9 @@ def _run_check(
         print(f"check={check_name} status=pass")
         return True
     print(f"check={check_name} status=fail")
+    print(f"check={check_name} child_exit_code={completed.returncode}")
+    for line in _safe_tail(completed.stdout, completed.stderr):
+        print(f"check={check_name} child_tail={line}")
     return False
 
 
