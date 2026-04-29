@@ -52,6 +52,7 @@ def test_sorted_migration_sql_paths_repo_migrations_order() -> None:
         "012_adm02_ensure_access_audit_events.sql",
         "013_telegram_update_dedup.sql",
         "014_subscription_lifecycle_v1.sql",
+        "015_access_reconcile_runs.sql",
     ]
 
 
@@ -316,5 +317,34 @@ def test_subscription_lifecycle_migration_contract_safe_additive_columns() -> No
         "truncate",
         " delete from ",
         "alter column",
+    ):
+        assert forbidden not in lowered
+
+
+def test_access_reconcile_runs_migration_contract_safe_additive_table() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "015_access_reconcile_runs.sql"
+    ).read_text(encoding="utf-8")
+    lowered = migration.lower()
+
+    assert "create table if not exists access_reconcile_runs" in lowered
+    assert "run_id uuid primary key" in lowered
+    assert "task_name text not null" in lowered
+    assert "started_at timestamptz not null" in lowered
+    assert "status text not null" in lowered
+    assert "reconciled_rows integer not null default 0" in lowered
+    assert "error_class text null" in lowered
+    assert "error_message text null" in lowered
+    assert "create index if not exists idx_access_reconcile_runs_task_started_at" in lowered
+
+    for forbidden in (
+        "drop table",
+        "drop column",
+        "truncate",
+        " delete from ",
+        "alter table issuance_state",
+        "alter table subscription_snapshots",
     ):
         assert forbidden not in lowered

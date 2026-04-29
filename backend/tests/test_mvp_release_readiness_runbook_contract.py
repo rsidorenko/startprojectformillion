@@ -16,6 +16,10 @@ def _read_text(rel_path: str) -> str:
 def test_release_readiness_runbook_documents_required_commands_and_policies() -> None:
     body = _read_text("docs/mvp_release_readiness_runbook.md")
 
+    assert "python scripts/validate_release_candidate.py" in body
+    assert "python scripts/configure_telegram_webhook.py" in body
+    assert "python scripts/configure_telegram_webhook.py --apply" in body
+    assert "python scripts/configure_telegram_webhook.py --verify" in body
     assert "python scripts/run_mvp_release_readiness.py" in body
     assert "python scripts/run_mvp_repo_release_health_check.py" in body
     assert "--config-profile polling" in body
@@ -40,6 +44,16 @@ def test_release_readiness_runbook_documents_required_commands_and_policies() ->
     assert "real credential/config delivery" in body.lower()
     assert "mvp_release_preflight: ok" in body
     assert "mvp_config_doctor: ok" in body
+    assert "release_candidate_validation: ok" in body
+    assert "release_candidate_validation: failed" in body
+    assert "TELEGRAM_WEBHOOK_PUBLIC_URL" in body
+    assert "TELEGRAM_WEBHOOK_ALLOWED_UPDATES" in body
+    assert "secret_token_status_match=unknown" in body
+    assert "allowed_updates_match=unknown" in body
+    assert "never runs `configure_telegram_webhook.py --verify`" in body
+    assert ".github/workflows/backend-postgres-mvp-smoke-validation.yml" in body
+    assert "slice1-postgres-mvp-smoke" in body
+    assert "Run release candidate validator (blocking final gate)" in body
 
 
 def test_release_readiness_runbook_has_no_raw_secret_or_dsn_examples() -> None:

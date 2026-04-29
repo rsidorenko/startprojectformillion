@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Any, cast
@@ -71,6 +72,18 @@ def _private_help_update() -> dict[str, Any]:
             "from": {"id": 42, "is_bot": False, "first_name": "U"},
             "chat": {"id": 42, "type": "private"},
             "text": "/help",
+        },
+    }
+
+
+def _private_get_access_update(*, update_id: int) -> dict[str, Any]:
+    return {
+        "update_id": update_id,
+        "message": {
+            "message_id": 1,
+            "from": {"id": 42, "is_bot": False, "first_name": "U"},
+            "chat": {"id": 42, "type": "private"},
+            "text": "/get_access",
         },
     }
 
@@ -403,6 +416,93 @@ async def test_unauthorized_path_does_not_read_raw_body() -> None:
     body_spy.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_first_mutating_update_dispatches_once_and_writes_dedup() -> None:
+    secret = _secret_for_tests()
+    settings = TelegramWebhookIngressSettings(expected_secret=secret)
+    runtime = _build_runtime()
+    app = create_slice1_telegram_webhook_starlette_app(runtime, settings=settings)
+    composition = runtime._composition  # noqa: SLF001
+    dedup_spy = AsyncMock(wraps=composition.telegram_update_dedup.mark_if_first_seen)
+    composition.telegram_update_dedup.mark_if_first_seen = dedup_spy  # type: ignore[method-assign]
+    dispatch_spy = AsyncMock()
+    update = _private_get_access_update(update_id=900012)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        with patch.object(polling_mod, "handle_slice1_telegram_update_to_runtime_action", dispatch_spy):
+            r = await ac.post(
+                "/telegram/webhook",
+                content=json.dumps(update).encode("utf-8"),
+                headers={"content-type": "application/json", TELEGRAM_WEBHOOK_SECRET_HEADER: secret},
+            )
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+    dedup_spy.assert_awaited_once()
+    dispatch_spy.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_mutating_update_is_noop_and_not_dispatched_twice() -> None:
+    secret = _secret_for_tests()
+    settings = TelegramWebhookIngressSettings(expected_secret=secret)
+    runtime = _build_runtime()
+    app = create_slice1_telegram_webhook_starlette_app(runtime, settings=settings)
+    dispatch_spy = AsyncMock()
+    update = _private_get_access_update(update_id=900013)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        with patch.object(polling_mod, "handle_slice1_telegram_update_to_runtime_action", dispatch_spy):
+            first = await ac.post(
+                "/telegram/webhook",
+                content=json.dumps(update).encode("utf-8"),
+                headers={"content-type": "application/json", TELEGRAM_WEBHOOK_SECRET_HEADER: secret},
+            )
+            second = await ac.post(
+                "/telegram/webhook",
+                content=json.dumps(update).encode("utf-8"),
+                headers={"content-type": "application/json", TELEGRAM_WEBHOOK_SECRET_HEADER: secret},
+            )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert dispatch_spy.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_missing_or_malformed_update_id_rejects_without_dedup_or_dispatch() -> None:
+    secret = _secret_for_tests()
+    settings = TelegramWebhookIngressSettings(expected_secret=secret)
+    runtime = _build_runtime()
+    app = create_slice1_telegram_webhook_starlette_app(runtime, settings=settings)
+    composition = runtime._composition  # noqa: SLF001
+    dedup_spy = AsyncMock(wraps=composition.telegram_update_dedup.mark_if_first_seen)
+    composition.telegram_update_dedup.mark_if_first_seen = dedup_spy  # type: ignore[method-assign]
+    dispatch_spy = AsyncMock()
+    missing = {"message": _private_get_access_update(update_id=5)["message"]}
+    malformed = {**_private_get_access_update(update_id=5), "update_id": "oops"}
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        with patch.object(polling_mod, "handle_slice1_telegram_update_to_runtime_action", dispatch_spy):
+            r_missing = await ac.post(
+                "/telegram/webhook",
+                content=json.dumps(missing).encode("utf-8"),
+                headers={"content-type": "application/json", TELEGRAM_WEBHOOK_SECRET_HEADER: secret},
+            )
+            r_malformed = await ac.post(
+                "/telegram/webhook",
+                content=json.dumps(malformed).encode("utf-8"),
+                headers={"content-type": "application/json", TELEGRAM_WEBHOOK_SECRET_HEADER: secret},
+            )
+    assert r_missing.status_code == 400
+    assert r_missing.json() == {"ok": False, "error": "invalid_update_id"}
+    assert r_malformed.status_code == 400
+    assert r_malformed.json() == {"ok": False, "error": "invalid_update_id"}
+    dedup_spy.assert_not_called()
+    dispatch_spy.assert_not_called()
+
+
 def test_load_settings_none_when_http_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TELEGRAM_WEBHOOK_HTTP_ENABLE", raising=False)
     assert load_telegram_webhook_ingress_settings_from_env(app_env="development") is None
@@ -446,9 +546,50 @@ def test_load_settings_production_missing_secret_still_fails_when_insecure_opt_i
         load_telegram_webhook_ingress_settings_from_env(app_env="production")
 
 
+def test_load_settings_strict_rejects_weak_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_HTTP_ENABLE", "1")
+    monkeypatch.setenv("LAUNCH_PREFLIGHT_STRICT", "1")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", "abcdabcdabcdabcdabcdabcd")
+    with pytest.raises(ConfigurationError, match="TELEGRAM_WEBHOOK_SECRET_TOKEN"):
+        load_telegram_webhook_ingress_settings_from_env(app_env="production")
+
+
 @pytest.mark.asyncio
 async def test_process_single_mapped_update_runs_pipeline() -> None:
     """Smoke: mapped update reaches polling runtime without fetch path."""
     runtime = _build_runtime()
     out = await runtime.process_single_mapped_update(_private_help_update(), correlation_id=None)
     assert out.received_count == 1
+
+
+@pytest.mark.asyncio
+async def test_secret_validation_uses_constant_time_compare_digest() -> None:
+    secret = _secret_for_tests()
+    settings = TelegramWebhookIngressSettings(expected_secret=secret)
+    runtime = _build_runtime()
+    app = create_slice1_telegram_webhook_starlette_app(runtime, settings=settings)
+
+    compare_calls: list[tuple[str, str]] = []
+
+    original_compare = secrets.compare_digest
+
+    def _compare(incoming: str, expected: str) -> bool:
+        compare_calls.append((incoming, expected))
+        return original_compare(incoming, expected)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        with patch("app.runtime.telegram_webhook_ingress.secrets.compare_digest", side_effect=_compare):
+            ok = await ac.post(
+                "/telegram/webhook",
+                content=json.dumps(_private_help_update()).encode("utf-8"),
+                headers={"content-type": "application/json", TELEGRAM_WEBHOOK_SECRET_HEADER: secret},
+            )
+            bad = await ac.post(
+                "/telegram/webhook",
+                content=json.dumps(_private_help_update()).encode("utf-8"),
+                headers={"content-type": "application/json", TELEGRAM_WEBHOOK_SECRET_HEADER: secret + "x"},
+            )
+    assert ok.status_code == 200
+    assert bad.status_code == 401
+    assert len(compare_calls) == 2

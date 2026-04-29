@@ -41,6 +41,9 @@ def _build_child_env() -> dict[str, str]:
     child_env["ISSUANCE_OPERATOR_ENABLE"] = "1"
     child_env["TELEGRAM_ACCESS_RESEND_ENABLE"] = "1"
     child_env["ADM02_ENSURE_ACCESS_ENABLE"] = "1"
+    # Canonical smoke defaults: used by customer journey + reconcile checks.
+    # Operator can override via env, but CI/local smoke should be able to run
+    # with safe defaults when unset.
     child_env.setdefault("ACCESS_RECONCILE_MAX_INTERVAL_SECONDS", "3600")
     child_env.setdefault("SUBSCRIPTION_DEFAULT_PERIOD_DAYS", "30")
     if not child_env.get("BOT_TOKEN"):
@@ -93,6 +96,24 @@ def main() -> None:
     )
     subprocess.run(
         ["python", "scripts/check_postgres_mvp_access_fulfillment_e2e.py"],
+        cwd=backend_dir,
+        env=child_env,
+        check=True,
+    )
+    subprocess.run(
+        ["python", "scripts/check_customer_journey_e2e.py"],
+        cwd=backend_dir,
+        env=child_env,
+        check=True,
+    )
+    subprocess.run(
+        ["python", "scripts/reconcile_expired_access.py"],
+        cwd=backend_dir,
+        env=child_env,
+        check=True,
+    )
+    subprocess.run(
+        ["python", "scripts/check_reconcile_health.py"],
         cwd=backend_dir,
         env=child_env,
         check=True,

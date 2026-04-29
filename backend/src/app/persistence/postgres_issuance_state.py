@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncpg
+from datetime import datetime
 
 from app.persistence.issuance_state_record import IssuanceStatePersistence, IssuanceStateRow
 from app.security.errors import InternalErrorCategory, PersistenceDependencyError
@@ -119,6 +120,73 @@ class PostgresIssuanceStateRepository:
         LIMIT 1
     """
 
+    _RECONCILE_EXPIRED_SUBSCRIPTIONS = """
+        UPDATE issuance_state AS i
+        SET
+            issuance_state = 'revoked',
+            revoked_at = COALESCE(i.revoked_at, $1::timestamptz),
+            updated_at = $1::timestamptz
+        WHERE i.issuance_state = 'issued'
+          AND EXISTS (
+              SELECT 1
+              FROM subscription_snapshots AS s
+              WHERE s.internal_user_id = i.internal_user_id
+                AND s.state_label = 'active'
+                AND s.active_until_utc IS NOT NULL
+                AND s.active_until_utc < $1::timestamptz
+          )
+    """
+
+    _INSERT_ACCESS_RECONCILE_RUN_STARTED = """
+        INSERT INTO access_reconcile_runs (
+            run_id,
+            task_name,
+            started_at,
+            status,
+            reconciled_rows,
+            error_class,
+            error_message
+        )
+        VALUES ($1::uuid, $2::text, $3::timestamptz, 'started', 0, NULL, NULL)
+    """
+
+    _UPDATE_ACCESS_RECONCILE_RUN_COMPLETED = """
+        UPDATE access_reconcile_runs
+        SET
+            finished_at = $3::timestamptz,
+            status = 'completed',
+            reconciled_rows = $4::int,
+            error_class = NULL,
+            error_message = NULL
+        WHERE run_id = $1::uuid
+          AND task_name = $2::text
+    """
+
+    _UPDATE_ACCESS_RECONCILE_RUN_FAILED = """
+        UPDATE access_reconcile_runs
+        SET
+            finished_at = $3::timestamptz,
+            status = 'failed',
+            error_class = $4::text,
+            error_message = $5::text
+        WHERE run_id = $1::uuid
+          AND task_name = $2::text
+    """
+
+    _SELECT_LATEST_ACCESS_RECONCILE_RUN = """
+        SELECT
+            started_at,
+            finished_at,
+            status,
+            reconciled_rows,
+            error_class,
+            error_message
+        FROM access_reconcile_runs
+        WHERE task_name = $1::text
+        ORDER BY started_at DESC, run_id DESC
+        LIMIT 1
+    """
+
     def __init__(self, pool: asyncpg.Pool) -> None:
         self._pool = pool
 
@@ -200,3 +268,101 @@ class PostgresIssuanceStateRepository:
         if row is None:
             return None
         return _row_to_domain(row)
+
+    async def reconcile_expired_active_subscriptions(self, *, now_utc) -> int:
+        try:
+            async with self._pool.acquire() as conn:
+                result = await conn.execute(
+                    self._RECONCILE_EXPIRED_SUBSCRIPTIONS,
+                    now_utc,
+                )
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
+        parts = result.split()
+        if len(parts) == 2 and parts[0] == "UPDATE":
+            try:
+                return int(parts[1])
+            except ValueError:
+                return 0
+        return 0
+
+    async def record_access_reconcile_started(
+        self,
+        *,
+        run_id: str,
+        task_name: str,
+        started_at,
+    ) -> None:
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    self._INSERT_ACCESS_RECONCILE_RUN_STARTED,
+                    run_id,
+                    task_name,
+                    started_at,
+                )
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
+
+    async def record_access_reconcile_completed(
+        self,
+        *,
+        run_id: str,
+        task_name: str,
+        finished_at,
+        reconciled_rows: int,
+    ) -> None:
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    self._UPDATE_ACCESS_RECONCILE_RUN_COMPLETED,
+                    run_id,
+                    task_name,
+                    finished_at,
+                    reconciled_rows,
+                )
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
+
+    async def record_access_reconcile_failed(
+        self,
+        *,
+        run_id: str,
+        task_name: str,
+        finished_at,
+        safe_error_class: str,
+        safe_error_message: str,
+    ) -> None:
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    self._UPDATE_ACCESS_RECONCILE_RUN_FAILED,
+                    run_id,
+                    task_name,
+                    finished_at,
+                    safe_error_class,
+                    safe_error_message,
+                )
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
+
+    async def fetch_latest_access_reconcile_run(
+        self,
+        *,
+        task_name: str,
+    ) -> tuple[datetime, datetime | None, str, int, str | None, str | None] | None:
+        try:
+            async with self._pool.acquire() as conn:
+                row = await conn.fetchrow(self._SELECT_LATEST_ACCESS_RECONCILE_RUN, task_name)
+        except (asyncpg.PostgresError, OSError) as exc:
+            raise PersistenceDependencyError(InternalErrorCategory.PERSISTENCE_TRANSIENT) from exc
+        if row is None:
+            return None
+        return (
+            row["started_at"],
+            row["finished_at"],
+            str(row["status"]),
+            int(row["reconciled_rows"]),
+            None if row["error_class"] is None else str(row["error_class"]),
+            None if row["error_message"] is None else str(row["error_message"]),
+        )
