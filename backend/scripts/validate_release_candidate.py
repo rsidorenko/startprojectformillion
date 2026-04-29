@@ -142,10 +142,19 @@ def run_release_candidate_validation(*, env: Mapping[str, str]) -> int:
     child_env = _build_child_env(env)
     backend_dir = _backend_dir()
     for check_name, command in _release_candidate_checks():
+        effective_child_env: Mapping[str, str] = child_env
+        # Preflight is intended to be lightweight/contracts-only and should not
+        # implicitly bind to a real database just because the operator/CI env
+        # includes DATABASE_URL for later checks.
+        if check_name == "migration_readiness_contract":
+            scrubbed = dict(child_env)
+            scrubbed.pop("DATABASE_URL", None)
+            scrubbed.pop("SLICE1_USE_POSTGRES_REPOS", None)
+            effective_child_env = scrubbed
         if not _run_check(
             check_name=check_name,
             command=command,
-            child_env=child_env,
+            child_env=effective_child_env,
             backend_dir=backend_dir,
         ):
             print("release_candidate_validation: failed")
