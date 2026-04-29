@@ -283,6 +283,8 @@ def run_repo_release_health_check(
         if ".cursor/plans/" not in normalized:
             continue
         status_prefix = normalized[:2]
+        if status_prefix[0] == "D":
+            continue
         if status_prefix != "??":
             _append_issue("tracked_cursor_plan_file")
             break
