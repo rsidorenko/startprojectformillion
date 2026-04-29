@@ -69,6 +69,7 @@ class FakeRawClient:
         text: str,
         *,
         correlation_id: str,
+        reply_markup: object | None = None,
     ) -> int:
         self.send_calls.append((chat_id, text, correlation_id))
         return 1

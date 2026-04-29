@@ -57,6 +57,7 @@ class FakeTelegramPollingClient:
         text: str,
         *,
         correlation_id: str,
+        reply_markup: object | None = None,
     ) -> int:
         if self.send_fail:
             raise RuntimeError("send failed")
