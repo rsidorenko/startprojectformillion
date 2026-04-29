@@ -4,3 +4,6 @@ backend/test-reports/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Cursor IDE planning files (historical reference only, per CLAUDE.md)
+.cursor/plans/
