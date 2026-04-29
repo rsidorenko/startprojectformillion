@@ -335,6 +335,17 @@ def _resolve_identity_from_payload(
             max_age_seconds=settings.checkout_reference_max_age_seconds,
             max_future_seconds=DEFAULT_CHECKOUT_REFERENCE_MAX_FUTURE_SECONDS,
         )
+        issued_at_raw = verified.issued_at
+        if issued_at_raw.endswith(("Z", "z")):
+            issued_at_raw = issued_at_raw[:-1] + "+00:00"
+        try:
+            issued_at_dt = datetime.fromisoformat(issued_at_raw).astimezone(UTC)
+        except (ValueError, OverflowError):
+            issued_at_dt = None
+        if issued_at_dt is not None and parsed.paid_at.astimezone(UTC) < issued_at_dt - timedelta(
+            seconds=DEFAULT_CHECKOUT_REFERENCE_MAX_FUTURE_SECONDS
+        ):
+            raise ValidationError("paid_at precedes checkout reference issued_at")
         if parsed.telegram_user_id is not None and parsed.telegram_user_id != verified.telegram_user_id:
             raise ValidationError("telegram_user_id mismatch with checkout reference")
         internal_user_id = verified.internal_user_id or _map_to_internal_user_id(verified.telegram_user_id)

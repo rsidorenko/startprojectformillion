@@ -428,6 +428,39 @@ def test_strict_mode_rejects_future_reference_without_mutation() -> None:
     apply.assert_not_called()
 
 
+def test_strict_mode_rejects_paid_at_before_checkout_reference_issued_at() -> None:
+    app = create_payment_fulfillment_ingress_app(
+        pool=object(),
+        settings=_settings(strict_reference=True),
+        now_utc_provider=lambda: datetime(2026, 4, 27, 0, 0, 0, tzinfo=UTC),
+    )  # type: ignore[arg-type]
+    payload = _payload_with_reference_issued_at(datetime(2026, 4, 27, 0, 0, 0, tzinfo=UTC))
+    payload["paid_at"] = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC).isoformat()
+    body = json.dumps(payload).encode("utf-8")
+    ts = "1777248000"
+    sig = _sign(_settings(strict_reference=True).secret, ts, body)
+    with pytest.MonkeyPatch.context() as m, TestClient(app) as client:
+        create_if_absent = AsyncMock()
+        ingest = AsyncMock()
+        apply = AsyncMock()
+        m.setattr(ingress_mod.PostgresUserIdentityRepository, "create_if_absent", create_if_absent)
+        m.setattr(ingress_mod.PostgresAtomicBillingIngestion, "ingest_normalized_billing_fact", ingest)
+        m.setattr(ingress_mod.PostgresAtomicUC05SubscriptionApply, "apply_by_internal_fact_ref", apply)
+        m.setattr(ingress_mod.time, "time", lambda: 1777248000)
+        response = client.post(
+            "/billing/fulfillment/webhook",
+            data=body,
+            headers={
+                ingress_mod.PAYMENT_TIMESTAMP_HEADER: ts,
+                ingress_mod.PAYMENT_SIGNATURE_HEADER: "sha256=" + sig,
+            },
+        )
+    assert response.status_code == 400
+    create_if_absent.assert_not_called()
+    ingest.assert_not_called()
+    apply.assert_not_called()
+
+
 def test_strict_mode_rejects_missing_reference_without_mutation() -> None:
     app = create_payment_fulfillment_ingress_app(pool=object(), settings=_settings(strict_reference=True))  # type: ignore[arg-type]
     body = json.dumps(_payload()).encode("utf-8")
