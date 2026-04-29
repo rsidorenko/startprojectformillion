@@ -493,11 +493,10 @@ async def run_customer_journey_e2e() -> None:
         expired_status = await _render_command(command="/my_subscription", ids=ids, composition=composition, update_id=122)
         _assert_contains(expired_status.message_text.lower(), "expired")
         _assert_contains(expired_status.message_text, "/renew")
-        expired_access = await _render_command(command="/get_access", ids=ids, composition=composition, update_id=123)
-        _assert_contains(expired_access.message_text, "/renew")
-        expired_resend = await _render_command(command="/resend_access", ids=ids, composition=composition, update_id=124)
-        _assert_contains(expired_resend.message_text, "/renew")
 
+        # Reconcile before expired-path resend commands: the resend handler contains a best-effort
+        # proactive revoke path that fires when the subscription is expired. Running reconcile first
+        # ensures the reconcile (not the handler) performs the authoritative state transition.
         reconciled_rows = await _reconcile_expired_access(pool)
         if reconciled_rows < 1:
             raise RuntimeError("expired access reconcile must revoke at least one issued row")
@@ -510,6 +509,11 @@ async def run_customer_journey_e2e() -> None:
             or current_after_reconcile.state is not IssuanceStatePersistence.REVOKED
         ):
             raise RuntimeError("expired access reconcile did not mark issuance as revoked")
+
+        expired_access = await _render_command(command="/get_access", ids=ids, composition=composition, update_id=123)
+        _assert_contains(expired_access.message_text, "/renew")
+        expired_resend = await _render_command(command="/resend_access", ids=ids, composition=composition, update_id=124)
+        _assert_contains(expired_resend.message_text, "/renew")
 
         support = await _render_command(command="/support", ids=ids, composition=composition, update_id=13)
         _assert_contains(support.message_text.lower(), "support")
