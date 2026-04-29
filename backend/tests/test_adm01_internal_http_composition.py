@@ -123,11 +123,10 @@ def test_internal_http_composition_happy_path_real_chain() -> None:
         assert body["correlation_id"] == cid
         assert body["summary"] is not None
         s = body["summary"]
-        assert s["internal_user_id"] == "u-777"
-        assert s["subscription_state_label"] == "active"
-        assert s["entitlement_category"] == "active"
-        assert s["policy_flag"] == "default"
-        assert s["issuance_state"] == "ok"
+        assert s["telegram_identity_known"] is True
+        assert s["subscription_bucket"] == "active"
+        assert s["access_readiness_bucket"] == "active_access_ready"
+        assert s["recommended_next_action"] == "ask_user_to_use_get_access"
         assert s["redaction"] == "none"
         assert identity.calls == 1
         assert identity.last_target == InternalUserTarget(internal_user_id="u-input")
