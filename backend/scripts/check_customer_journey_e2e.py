@@ -27,6 +27,7 @@ from app.admin_support.adm02_ensure_access_mutation import Adm02EnsureAccessIssu
 from app.admin_support.adm02_wiring import build_adm02_ensure_access_handler
 from app.admin_support.principal_extraction import DefaultInternalAdminPrincipalExtractor
 from app.application.interfaces import SubscriptionSnapshot
+from app.application.telegram_command_rate_limit import NoopAllowAllTelegramCommandRateLimiter
 from app.bot_transport.runtime_facade import handle_slice1_telegram_update_to_rendered_message
 from app.issuance.fake_provider import FakeIssuanceProvider, FakeProviderMode
 from app.issuance.service import IssuanceService
@@ -284,6 +285,11 @@ async def _resolve_postgres_composition(pool: asyncpg.Pool):
             return pool
 
         composition, _ = await resolve_slice1_composition_for_runtime(config, open_pool=_reuse_pool)
+        # Smoke test exercises the full journey (pending → active → expired) making more
+        # ACCESS_RESEND calls than the default dispatcher rate limit allows in one window.
+        # Rate limiting is tested separately; disable it here to keep the journey assertions clean.
+        from dataclasses import replace as _dc_replace
+        composition = _dc_replace(composition, command_rate_limiter=NoopAllowAllTelegramCommandRateLimiter())
         return composition
     finally:
         if old is None:
