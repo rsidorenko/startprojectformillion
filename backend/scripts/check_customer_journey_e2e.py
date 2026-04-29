@@ -56,7 +56,6 @@ _SLICE1_POSTGRES_REPOS_ENV = "SLICE1_USE_POSTGRES_REPOS"
 _REQUIRED_ENV = (
     "SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS",
     "TELEGRAM_ACCESS_RESEND_ENABLE",
-    "TELEGRAM_CHECKOUT_REFERENCE_SECRET",
 )
 _FORBIDDEN = (
     "DATABASE_URL",
@@ -116,6 +115,9 @@ def _require_env_opt_ins() -> None:
     for name in _REQUIRED_ENV:
         if not _truthy(os.environ.get(name)):
             raise RuntimeError("required smoke opt-ins are not enabled")
+    checkout_secret = os.environ.get("TELEGRAM_CHECKOUT_REFERENCE_SECRET", "").strip()
+    if not checkout_secret:
+        raise RuntimeError("required smoke opt-ins are not enabled")
 
 
 def _required_database_url() -> str:
