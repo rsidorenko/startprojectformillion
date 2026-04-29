@@ -148,8 +148,23 @@ def run_release_candidate_validation(*, env: Mapping[str, str]) -> int:
         # includes DATABASE_URL for later checks.
         if check_name == "migration_readiness_contract":
             scrubbed = dict(child_env)
-            scrubbed.pop("DATABASE_URL", None)
-            scrubbed.pop("SLICE1_USE_POSTGRES_REPOS", None)
+            for key in (
+                "DATABASE_URL",
+                "SLICE1_USE_POSTGRES_REPOS",
+                "TELEGRAM_WEBHOOK_HTTP_ENABLE",
+                "TELEGRAM_WEBHOOK_SECRET_TOKEN",
+                "TELEGRAM_WEBHOOK_PUBLIC_URL",
+                "TELEGRAM_WEBHOOK_ALLOWED_UPDATES",
+                "TELEGRAM_ACCESS_RESEND_ENABLE",
+                "PAYMENT_FULFILLMENT_HTTP_ENABLE",
+                "PAYMENT_FULFILLMENT_WEBHOOK_SECRET",
+                "TELEGRAM_CHECKOUT_REFERENCE_SECRET",
+                "TELEGRAM_CHECKOUT_REFERENCE_MAX_AGE_SECONDS",
+                "ACCESS_RECONCILE_SCHEDULE_ACK",
+                "ACCESS_RECONCILE_MAX_INTERVAL_SECONDS",
+                "SUBSCRIPTION_DEFAULT_PERIOD_DAYS",
+            ):
+                scrubbed.pop(key, None)
             effective_child_env = scrubbed
         if not _run_check(
             check_name=check_name,
