@@ -693,6 +693,19 @@ def test_database_url_in_workflow_returns_safe_issue_code(tmp_path: Path) -> Non
         assert "DATABASE_URL=" not in issue
 
 
+def test_staged_deletion_cursor_plan_does_not_trigger_issue(tmp_path: Path) -> None:
+    script = _load_script_module()
+    _write_valid_fixture(tmp_path)
+
+    ok, issues = script.run_repo_release_health_check(
+        backend_dir=tmp_path,
+        git_status_reader=lambda _repo_root: "D  .cursor/plans/removed.plan.md\n",
+    )
+
+    assert "tracked_cursor_plan_file" not in issues
+    assert ok is True
+
+
 def test_tracked_cursor_plan_status_returns_safe_issue_code(tmp_path: Path) -> None:
     script = _load_script_module()
     _write_valid_fixture(tmp_path)
