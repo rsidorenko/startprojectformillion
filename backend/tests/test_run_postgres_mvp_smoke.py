@@ -188,6 +188,19 @@ def test_build_child_env_adds_only_contract_opt_ins(monkeypatch: pytest.MonkeyPa
     script = _load_script_module()
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:secret@localhost:5432/mvpdb")
     monkeypatch.setenv("BOT_TOKEN", "already-set-token")
+    # CI may pre-set some of these env keys for other steps; clear them so the
+    # contract assertion is deterministic and verifies helper behavior.
+    for key in (
+        "ADM02_ENSURE_ACCESS_ENABLE",
+        "ACCESS_RECONCILE_MAX_INTERVAL_SECONDS",
+        "BILLING_NORMALIZED_INGEST_ENABLE",
+        "BILLING_SUBSCRIPTION_APPLY_ENABLE",
+        "ISSUANCE_OPERATOR_ENABLE",
+        "SLICE1_USE_POSTGRES_REPOS",
+        "SUBSCRIPTION_DEFAULT_PERIOD_DAYS",
+        "TELEGRAM_ACCESS_RESEND_ENABLE",
+    ):
+        monkeypatch.delenv(key, raising=False)
 
     base_env = dict(script.os.environ)
     child_env = script._build_child_env()
