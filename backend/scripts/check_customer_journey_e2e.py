@@ -518,8 +518,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.parse_args(argv)
     try:
         asyncio.run(run_customer_journey_e2e())
-    except RuntimeError:
+    except RuntimeError as exc:
         _print_stderr_safe(_STDERR_FAIL)
+        # Emit a bounded reason marker to make CI triage possible without
+        # printing sensitive values or full tracebacks.
+        msg = (str(exc) or "").strip().lower()
+        if msg == "required smoke opt-ins are not enabled":
+            code = "required_opt_in_missing"
+        elif msg == "expected customer copy fragment is missing":
+            code = "customer_copy_missing"
+        elif msg == "resend access must stay idempotent-safe":
+            code = "resend_access_not_idempotent_safe"
+        elif msg == "adm02 ensure-access failed":
+            code = "adm02_ensure_access_failed"
+        elif msg == "expired access reconcile must revoke at least one issued row":
+            code = "reconcile_no_rows_revoked"
+        elif msg == "expired access reconcile must be idempotent on repeat run":
+            code = "reconcile_not_idempotent"
+        elif msg == "expired access reconcile did not mark issuance as revoked":
+            code = "reconcile_state_not_revoked"
+        else:
+            code = "runtime_error"
+        _print_stderr_safe(f"issue_code={code}")
         return 1
     except Exception:
         _print_stderr_safe(_STDERR_FAILED)

@@ -63,7 +63,10 @@ def test_runtime_error_maps_to_fail_fixed_line_without_leak(
     out = capsys.readouterr()
     assert rc == 1
     assert out.out == ""
-    assert out.err.strip() == "customer_journey_e2e: fail"
+    assert out.err.strip().splitlines() == [
+        "customer_journey_e2e: fail",
+        "issue_code=runtime_error",
+    ]
     assert "Traceback" not in out.err
     for frag in _FORBIDDEN:
         assert frag not in out.err
@@ -111,7 +114,10 @@ def test_missing_opt_in_main_fails_with_safe_fixed_line(
     out = capsys.readouterr()
     assert rc == 1
     assert out.out == ""
-    assert out.err.strip() == "customer_journey_e2e: fail"
+    assert out.err.strip().splitlines() == [
+        "customer_journey_e2e: fail",
+        "issue_code=required_opt_in_missing",
+    ]
 
 
 def test_script_contains_lifecycle_active_and_expired_path_contract() -> None:
