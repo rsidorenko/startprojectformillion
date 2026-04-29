@@ -203,6 +203,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://slice1ret_ci:slice1retCILocal0nly@127.0.0.1:5432/slice1retention_ci
           SLICE1_POSTGRES_MVP_SMOKE_ALLOW_MUTATING_TESTS: "1"
+          SLICE1_USE_POSTGRES_REPOS: "1"
           BOT_TOKEN: "1234567890:ci_test_bot_token"
           TELEGRAM_STOREFRONT_PLAN_NAME: "CI Test Plan"
           TELEGRAM_STOREFRONT_PLAN_PRICE: "$9.99 test-only"
