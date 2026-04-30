@@ -40,6 +40,11 @@ Workflow structure contract target: `tests/test_mvp_release_readiness_workflow_s
 - ADM-02 ensure-access remediation path.
 - ADM-02 audit readback path.
 
+## Operator env template
+- `backend/.env.example` — committed safe template with placeholders only.
+- Copy to `backend/.env`, fill real staging/test values, load into shell.
+- `backend/.env` is local-only and must not be committed.
+
 ## Security toggles (names only)
 - `TELEGRAM_WEBHOOK_SECRET_TOKEN`
 - `TELEGRAM_WEBHOOK_ALLOW_INSECURE_LOCAL`

@@ -6,6 +6,7 @@ Warning: do not run blanket `git add .` for this commit.
 
 ## Include (stage exactly these files)
 - `PROJECT_HANDOFF.md`
+- `.gitignore`
 - `.github/workflows/backend-mvp-release-readiness.yml`
 - `backend/RELEASE_STATUS.md`
 - `backend/docs/mvp_release_artifact_manifest.md`
@@ -13,6 +14,7 @@ Warning: do not run blanket `git add .` for this commit.
 - `backend/docs/mvp_release_readiness_runbook.md`
 - `backend/docs/mvp_release_staging_manifest.md`
 - `backend/docs/operator_environment_validation_bootstrap.md`
+- `backend/.env.example`
 - `backend/scripts/run_mvp_release_readiness.py`
 - `backend/scripts/run_mvp_release_checklist.py`
 - `backend/scripts/run_mvp_release_preflight.py`
@@ -62,8 +64,8 @@ Warning: do not run blanket `git add .` for this commit.
 
 ## Suggested manual staging commands (example, do not execute blindly)
 ```bash
-git add -- PROJECT_HANDOFF.md .github/workflows/backend-mvp-release-readiness.yml
-git add -- backend/RELEASE_STATUS.md backend/docs/mvp_release_artifact_manifest.md backend/docs/mvp_release_ci_trigger_decision.md backend/docs/mvp_release_readiness_runbook.md backend/docs/mvp_release_staging_manifest.md backend/docs/operator_environment_validation_bootstrap.md
+git add -- PROJECT_HANDOFF.md .github/workflows/backend-mvp-release-readiness.yml .gitignore
+git add -- backend/RELEASE_STATUS.md backend/docs/mvp_release_artifact_manifest.md backend/docs/mvp_release_ci_trigger_decision.md backend/docs/mvp_release_readiness_runbook.md backend/docs/mvp_release_staging_manifest.md backend/docs/operator_environment_validation_bootstrap.md backend/.env.example
 git add -- backend/scripts/run_mvp_release_readiness.py backend/scripts/run_mvp_release_checklist.py backend/scripts/run_mvp_release_preflight.py backend/scripts/run_mvp_config_doctor.py backend/scripts/run_mvp_repo_release_health_check.py backend/scripts/run_mvp_final_static_handoff_check.py backend/scripts/print_mvp_release_handoff_summary.py backend/scripts/validate_release_candidate.py backend/scripts/check_launch_readiness.py backend/scripts/configure_telegram_webhook.py backend/scripts/check_customer_journey_e2e.py backend/scripts/reconcile_expired_access.py backend/scripts/check_reconcile_health.py
 git add -- backend/tests/test_mvp_final_release_gate_contract.py backend/tests/test_mvp_release_package_complete_contract.py backend/tests/test_mvp_release_readiness_workflow_structure_contract.py backend/tests/test_release_status_contract.py backend/tests/test_mvp_release_scripts_output_contract.py backend/tests/test_mvp_release_artifact_manifest_contract.py backend/tests/test_mvp_release_readiness_runbook_contract.py backend/tests/test_mvp_release_readiness_ci_evidence_contract.py backend/tests/test_mvp_release_ci_trigger_decision_contract.py backend/tests/test_mvp_release_staging_manifest_contract.py backend/tests/test_run_mvp_config_doctor.py backend/tests/test_run_mvp_final_static_handoff_check.py backend/tests/test_run_mvp_release_checklist.py backend/tests/test_run_mvp_release_preflight.py backend/tests/test_run_mvp_release_readiness.py backend/tests/test_run_mvp_repo_release_health_check.py backend/tests/test_print_mvp_release_handoff_summary.py backend/tests/test_postgres_mvp_smoke_ci_evidence_contract.py backend/tests/test_project_handoff_contract.py
 git status --short --untracked-files=all

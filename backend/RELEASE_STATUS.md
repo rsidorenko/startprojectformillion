@@ -25,6 +25,7 @@ Current main HEAD: `9dcd6b6` (includes PRs #4–#8).
   - Full backend regression is advisory (non-blocking).
 
 ## Manual go/no-go gates
+- Copy `backend/.env.example` to `backend/.env`, fill real staging/test values, load into shell before running commands.
 - Run `python scripts/run_mvp_config_doctor.py --profile polling|webhook|internal-admin|retention|all` with actual operator environment.
 - Run `python scripts/run_postgres_mvp_smoke_local.py` when Docker and PostgreSQL are available.
 - Run `python scripts/validate_release_candidate.py` with full operator environment.

@@ -7,3 +7,8 @@ __pycache__/
 
 # Cursor IDE planning files (historical reference only, per CLAUDE.md)
 .cursor/plans/
+
+# Local environment files (real values — never commit)
+backend/.env
+backend/.env.local
+backend/.env.*.local
