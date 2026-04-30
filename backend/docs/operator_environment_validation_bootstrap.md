@@ -11,6 +11,44 @@ Purpose: guide a human operator through provisioning a safe staging/test environ
 - Do not run `reconcile_expired_access.py` against a production database without explicit confirmation.
 - Do not enable `OPERATIONAL_RETENTION_DELETE_ENABLE` unless you understand the effect and have run dry-run first.
 
+## Where to put local environment values
+
+A committed template file `backend/.env.example` lists all environment variables with safe placeholders and documentation.
+
+1. Copy the template: `cp backend/.env.example backend/.env`
+2. Edit `backend/.env` and replace placeholder values with your real staging/test values.
+3. `backend/.env` is local-only and **must not** be committed (it is listed in `.gitignore`).
+4. Do not paste secrets into ChatGPT, Claude, PRs, issues, commits, or logs.
+
+### Loading env vars into your shell
+
+Scripts read environment variables from the process environment. They do **not** auto-load `.env` files.
+
+Git Bash (recommended):
+```
+cd backend
+set -a; source .env; set +a
+```
+
+PowerShell:
+```
+cd backend
+Get-Content .env | ForEach-Object { if ($_ -match '=') { $n,$v = $_ -split '=',2; [Environment]::SetEnvironmentVariable($n,$v,'Process') } }
+```
+
+Or export each variable manually in your shell session.
+
+### Validation order after filling env
+
+1. `python scripts/run_mvp_config_doctor.py --profile all`
+2. `python scripts/check_launch_readiness.py`
+3. `python scripts/check_launch_readiness.py --strict`
+4. `python scripts/validate_release_candidate.py`
+5. Docker smoke only if Docker is available and the DB is staging/test
+6. `python scripts/configure_telegram_webhook.py --dry-run` before any verify/apply
+7. Apply/delete webhook only as explicit operator action
+8. Reconcile execution only against staging/test DB with explicit operator confirmation
+
 ## Required environment variables
 
 ### Secrets (never log, never commit, never share)
@@ -199,6 +237,7 @@ CI uses disposable `postgres:16-alpine` service containers with test-only creden
 
 ## Next operator action
 
-1. Set all required env vars in your shell session (not in a file that could be committed).
-2. Run the validation rerun batch or individual commands from Phase 2 onward.
-3. Share only the redacted gate report (issue codes, PASS/FAIL status), never raw env values.
+1. Copy `backend/.env.example` to `backend/.env` and fill in real staging/test values.
+2. Load the file into your shell: `cd backend && set -a; source .env; set +a`
+3. Run the validation commands from "Validation order after filling env" above, or individual commands from Phase 2 onward.
+4. Share only the redacted gate report (issue codes, PASS/FAIL status), never raw env values.
