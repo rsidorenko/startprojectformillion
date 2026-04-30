@@ -71,6 +71,7 @@ Workflow structure contract target: `tests/test_mvp_release_readiness_workflow_s
 ## Cross-reference
 - Readiness runbook: `backend/docs/mvp_release_readiness_runbook.md`
 - CI trigger decision note: `backend/docs/mvp_release_ci_trigger_decision.md`
+- Operator env bootstrap: `backend/docs/operator_environment_validation_bootstrap.md`
 
 ## Explicit out-of-scope
 - public billing ingress

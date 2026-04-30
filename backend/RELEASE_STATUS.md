@@ -76,6 +76,7 @@ Current main HEAD: `9dcd6b6` (includes PRs #4–#8).
 - `docs/admin_support_internal_read_gate_runbook.md`
 - `docs/issuance_operator_runbook.md`
 - `docs/billing_operator_ingest_apply_runbook.md`
+- `docs/operator_environment_validation_bootstrap.md`
 - final static handoff check script: `scripts/run_mvp_final_static_handoff_check.py`
 - final release gate contract: `tests/test_mvp_final_release_gate_contract.py`
 - release candidate validator: `scripts/validate_release_candidate.py`
